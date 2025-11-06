@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(tree:*)",
+      "Bash(pip install:*)",
+      "Bash(if exist \"measurerers_bot.db\" del measurerers_bot.db)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
