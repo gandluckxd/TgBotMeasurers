@@ -90,7 +90,8 @@ class RoleCheckMiddleware(BaseMiddleware):
             data["is_manager"] = user_role == UserRole.MANAGER
             data["is_measurer"] = user_role == UserRole.MEASURER
 
-            # Супервизор имеет права администратора (кроме создания ссылок)
+            # Руководитель (Supervisor) имеет ПОЛНЫЕ права администратора (один в один!)
+            # Единственное отличие - администратор зафиксирован в конфиге, а руководители управляются в БД
             data["has_admin_access"] = user_role in [UserRole.ADMIN, UserRole.SUPERVISOR]
 
             logger.debug(f"User {telegram_id} has role: {user_role}")

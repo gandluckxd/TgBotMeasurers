@@ -42,15 +42,28 @@ from config import settings
 admin_router = Router()
 
 
-def is_admin(telegram_id: int) -> bool:
-    """Проверка, является ли пользователь администратором"""
-    return telegram_id in settings.admin_ids_list
+def is_admin_or_supervisor(telegram_id: int) -> bool:
+    """
+    Проверка, является ли пользователь администратором или руководителем
+    Руководитель имеет ПОЛНЫЙ функционал администратора!
+    """
+    # Проверяем, является ли пользователь администратором из конфига
+    if telegram_id in settings.admin_ids_list:
+        return True
+
+    # Это будет проверено через middleware - если пользователь руководитель
+    # Но для совместимости оставляем базовую проверку
+    return False
+
+# Для обратной совместимости
+is_admin = is_admin_or_supervisor
 
 
 @admin_router.message(Command("start"))
-async def cmd_start(message: Message):
-    """Обработчик команды /start"""
-    if not is_admin(message.from_user.id):
+async def cmd_start(message: Message, has_admin_access: bool = False):
+    """Обработчик команды /start для администратора и руководителя"""
+    # Проверяем права доступа (админ или руководитель)
+    if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer(
             "⚠️ У вас нет доступа к этой команде.\n"
             "Обратитесь к администратору для получения доступа."
@@ -72,7 +85,15 @@ async def cmd_start(message: Message):
             )
 
         text = f"👋 Добро пожаловать, <b>{user.full_name}</b>!\n\n"
-        text += "Вы вошли как <b>Администратор</b>\n\n"
+
+        # Определяем роль для отображения
+        if user.role == UserRole.ADMIN:
+            text += "Вы вошли как <b>Администратор</b>\n\n"
+        elif user.role == UserRole.SUPERVISOR:
+            text += "Вы вошли как <b>Руководитель</b>\n\n"
+        else:
+            text += "Вы вошли как <b>Администратор</b>\n\n"
+
         text += "📋 Используйте меню ниже для управления замерами:\n\n"
         text += "Доступные команды:\n"
         text += "/menu - Главное меню\n"
@@ -85,8 +106,9 @@ async def cmd_start(message: Message):
         reply_keyboard = get_admin_commands_keyboard()
         await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
-        # Inline клавиатура с главным меню
-        inline_keyboard = get_main_menu_keyboard("admin")
+        # Inline клавиатура с главным меню (определяем роль для клавиатуры)
+        role_for_keyboard = "supervisor" if user.role == UserRole.SUPERVISOR else "admin"
+        inline_keyboard = get_main_menu_keyboard(role_for_keyboard)
         await message.answer(
             "📋 <b>Или используйте кнопки ниже:</b>",
             reply_markup=inline_keyboard,
@@ -95,20 +117,24 @@ async def cmd_start(message: Message):
 
 
 @admin_router.message(Command("menu"))
-async def cmd_menu(message: Message):
-    """Обработчик команды /menu"""
-    if not is_admin(message.from_user.id):
+async def cmd_menu(message: Message, has_admin_access: bool = False, user_role: UserRole = None):
+    """Обработчик команды /menu для администратора и руководителя"""
+    if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
-    keyboard = get_main_menu_keyboard("admin")
-    await message.answer("📋 <b>Главное меню администратора:</b>", reply_markup=keyboard, parse_mode="HTML")
+    # Определяем роль для клавиатуры
+    role_for_keyboard = "supervisor" if user_role == UserRole.SUPERVISOR else "admin"
+    keyboard = get_main_menu_keyboard(role_for_keyboard)
+
+    menu_title = "Главное меню руководителя" if user_role == UserRole.SUPERVISOR else "Главное меню администратора"
+    await message.answer(f"📋 <b>{menu_title}:</b>", reply_markup=keyboard, parse_mode="HTML")
 
 
 @admin_router.message(Command("measurers"))
-async def cmd_measurers(message: Message):
+async def cmd_measurers(message: Message, has_admin_access: bool = False):
     """Показать список замерщиков"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
@@ -130,9 +156,9 @@ async def cmd_measurers(message: Message):
 
 
 @admin_router.message(Command("pending"))
-async def cmd_pending(message: Message):
+async def cmd_pending(message: Message, has_admin_access: bool = False):
     """Показать новые замеры, ожидающие назначения"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
@@ -166,9 +192,9 @@ async def cmd_pending(message: Message):
 
 
 @admin_router.message(Command("all"))
-async def cmd_all(message: Message):
+async def cmd_all(message: Message, has_admin_access: bool = False):
     """Показать все замеры"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
@@ -196,9 +222,9 @@ async def cmd_all(message: Message):
 
 
 @admin_router.callback_query(F.data.startswith("assign:"))
-async def handle_assign_measurer(callback: CallbackQuery):
+async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool = False):
     """Обработка назначения замерщика на замер"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -279,9 +305,9 @@ async def handle_assign_measurer(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("change_measurer:"))
-async def handle_change_measurer(callback: CallbackQuery):
+async def handle_change_measurer(callback: CallbackQuery, has_admin_access: bool = False):
     """Обработка изменения замерщика"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -317,9 +343,9 @@ async def handle_change_measurer(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("list:"))
-async def handle_list(callback: CallbackQuery):
+async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
     """Обработка запросов списков замеров"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -377,33 +403,33 @@ async def handle_list(callback: CallbackQuery):
 # ========================================
 
 @admin_router.message(F.text == "📋 Главное меню")
-async def handle_main_menu_button(message: Message):
+async def handle_main_menu_button(message: Message, has_admin_access: bool = False, user_role: UserRole = None):
     """Обработка нажатия кнопки Главное меню"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         return
-    await cmd_menu(message)
+    await cmd_menu(message, has_admin_access=has_admin_access, user_role=user_role)
 
 
 @admin_router.message(F.text == "👤 Пользователи")
-async def handle_users_button(message: Message):
+async def handle_users_button(message: Message, has_admin_access: bool = False):
     """Обработка нажатия кнопки Пользователи"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         return
-    await cmd_users(message)
+    await cmd_users(message, has_admin_access=has_admin_access)
 
 
 @admin_router.message(F.text == "🆕 Новые замеры")
-async def handle_pending_button(message: Message):
+async def handle_pending_button(message: Message, has_admin_access: bool = False):
     """Обработка нажатия кнопки Новые замеры"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         return
-    await cmd_pending(message)
+    await cmd_pending(message, has_admin_access=has_admin_access)
 
 
 @admin_router.message(F.text == "🔄 В процессе")
-async def handle_in_progress_button(message: Message):
+async def handle_in_progress_button(message: Message, has_admin_access: bool = False):
     """Обработка нажатия кнопки В процессе"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         return
 
     async for session in get_db():
@@ -424,19 +450,19 @@ async def handle_in_progress_button(message: Message):
 
 
 @admin_router.message(F.text == "👥 Замерщики")
-async def handle_measurers_button(message: Message):
+async def handle_measurers_button(message: Message, has_admin_access: bool = False):
     """Обработка нажатия кнопки Замерщики"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         return
-    await cmd_measurers(message)
+    await cmd_measurers(message, has_admin_access=has_admin_access)
 
 
 @admin_router.message(F.text == "📊 Все замеры")
-async def handle_all_button(message: Message):
+async def handle_all_button(message: Message, has_admin_access: bool = False):
     """Обработка нажатия кнопки Все замеры"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         return
-    await cmd_all(message)
+    await cmd_all(message, has_admin_access=has_admin_access)
 
 
 # ========================================
@@ -444,9 +470,9 @@ async def handle_all_button(message: Message):
 # ========================================
 
 @admin_router.message(Command("users"))
-async def cmd_users(message: Message):
+async def cmd_users(message: Message, has_admin_access: bool = False):
     """Показать список всех пользователей"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
@@ -466,9 +492,9 @@ async def cmd_users(message: Message):
 
 
 @admin_router.callback_query(F.data == "users_list")
-async def handle_users_list(callback: CallbackQuery):
+async def handle_users_list(callback: CallbackQuery, has_admin_access: bool = False):
     """Показать список пользователей"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -490,9 +516,9 @@ async def handle_users_list(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("users_page:"))
-async def handle_users_page(callback: CallbackQuery):
+async def handle_users_page(callback: CallbackQuery, has_admin_access: bool = False):
     """Переключение страницы списка пользователей"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -516,9 +542,9 @@ async def handle_users_page(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("user_detail:"))
-async def handle_user_detail(callback: CallbackQuery):
+async def handle_user_detail(callback: CallbackQuery, has_admin_access: bool = False):
     """Показать детали пользователя"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -562,9 +588,9 @@ async def handle_user_detail(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("user_change_role:"))
-async def handle_user_change_role(callback: CallbackQuery):
+async def handle_user_change_role(callback: CallbackQuery, has_admin_access: bool = False):
     """Показать меню выбора роли"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -594,9 +620,9 @@ async def handle_user_change_role(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("user_set_role:"))
-async def handle_user_set_role(callback: CallbackQuery):
+async def handle_user_set_role(callback: CallbackQuery, has_admin_access: bool = False):
     """Установить роль пользователя"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -664,9 +690,9 @@ async def handle_user_set_role(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("user_toggle:"))
-async def handle_user_toggle(callback: CallbackQuery):
+async def handle_user_toggle(callback: CallbackQuery, has_admin_access: bool = False):
     """Переключить статус активности пользователя"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
@@ -712,9 +738,9 @@ async def handle_user_toggle(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data == "measurers_list")
-async def handle_measurers_list(callback: CallbackQuery):
+async def handle_measurers_list(callback: CallbackQuery, has_admin_access: bool = False):
     """Показать список замерщиков через callback"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access and not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 

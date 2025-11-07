@@ -48,12 +48,14 @@ async def cmd_start_manager(message: Message):
         text += "Вы вошли как <b>Менеджер</b>\n\n"
         text += "📋 Используйте меню ниже для отслеживания ваших заказов:\n\n"
         text += "Доступные команды:\n"
-        text += "/menu - Главное меню\n"
-        text += "/orders - Мои заказы\n"
+        text += "• 📊 Все замеры - просмотр всех ваших заказов\n"
+        text += "• 🔄 Замеры в работе - текущие активные замеры\n"
 
-        keyboard = get_main_menu_keyboard("manager")
+        # Reply клавиатура
+        from bot.keyboards.reply import get_manager_commands_keyboard
+        reply_keyboard = get_manager_commands_keyboard()
 
-        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
 
 @manager_router.message(Command("menu"))
@@ -111,8 +113,24 @@ async def handle_manager_measurements(callback: CallbackQuery):
 
             # Получаем заказы менеджера
             if filter_type == "all":
+                # ВСЕ замеры менеджера
                 measurements = await get_measurements_by_manager(session, user.id)
-                title = "📋 Все заказы"
+                title = "📊 Все заказы"
+
+            elif filter_type == "in_progress":
+                # ЗАМЕРЫ В РАБОТЕ (pending + assigned + in_progress)
+                pending_measurements = await get_measurements_by_manager(
+                    session, user.id, MeasurementStatus.PENDING
+                )
+                assigned_measurements = await get_measurements_by_manager(
+                    session, user.id, MeasurementStatus.ASSIGNED
+                )
+                in_progress_measurements = await get_measurements_by_manager(
+                    session, user.id, MeasurementStatus.IN_PROGRESS
+                )
+                # Объединяем списки
+                measurements = list(pending_measurements) + list(assigned_measurements) + list(in_progress_measurements)
+                title = "🔄 Замеры в работе"
 
             elif filter_type == "pending":
                 measurements = await get_measurements_by_manager(
@@ -148,3 +166,70 @@ async def handle_manager_measurements(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка при получении заказов: {e}", exc_info=True)
         await callback.answer("❌ Ошибка при получении заказов", show_alert=True)
+
+
+# ========================================
+# Обработчики текстовых кнопок (Reply Keyboard)
+# ========================================
+
+@manager_router.message(F.text == "📊 Мои заказы")
+async def handle_all_measurements_button(message: Message):
+    """Обработка нажатия кнопки Мои заказы"""
+    async for session in get_db():
+        user = await get_user_by_telegram_id(session, message.from_user.id)
+
+        if not user or user.role != UserRole.MANAGER:
+            return
+
+        # Получаем все заказы менеджера
+        measurements = await get_measurements_by_manager(session, user.id)
+
+        if not measurements:
+            await message.answer("✅ У вас нет заказов с замерами")
+            return
+
+        text = f"📊 <b>Все ваши заказы ({len(measurements)}):</b>\n\n"
+
+        for measurement in measurements[:20]:  # Показываем первые 20
+            text += f"━━━━━━━━━━━━━━━\n"
+            text += measurement.get_info_text(detailed=True)
+            text += "\n"
+
+        await message.answer(text, parse_mode="HTML")
+
+
+@manager_router.message(F.text == "🔄 Заказы в работе")
+async def handle_in_progress_measurements_button(message: Message):
+    """Обработка нажатия кнопки Заказы в работе"""
+    async for session in get_db():
+        user = await get_user_by_telegram_id(session, message.from_user.id)
+
+        if not user or user.role != UserRole.MANAGER:
+            return
+
+        # Получаем замеры в работе (pending + assigned + in_progress)
+        pending_measurements = await get_measurements_by_manager(
+            session, user.id, MeasurementStatus.PENDING
+        )
+        assigned_measurements = await get_measurements_by_manager(
+            session, user.id, MeasurementStatus.ASSIGNED
+        )
+        in_progress_measurements = await get_measurements_by_manager(
+            session, user.id, MeasurementStatus.IN_PROGRESS
+        )
+
+        # Объединяем списки
+        measurements = list(pending_measurements) + list(assigned_measurements) + list(in_progress_measurements)
+
+        if not measurements:
+            await message.answer("✅ Нет замеров в работе")
+            return
+
+        text = f"🔄 <b>Замеры в работе ({len(measurements)}):</b>\n\n"
+
+        for measurement in measurements[:20]:  # Показываем первые 20
+            text += f"━━━━━━━━━━━━━━━\n"
+            text += measurement.get_info_text(detailed=True)
+            text += "\n"
+
+        await message.answer(text, parse_mode="HTML")

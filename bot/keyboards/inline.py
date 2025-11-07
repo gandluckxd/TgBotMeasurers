@@ -127,14 +127,15 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
     Создать главное меню в зависимости от роли
 
     Args:
-        role: Роль пользователя (admin, measurer, manager)
+        role: Роль пользователя (admin, supervisor, measurer, manager)
 
     Returns:
         Inline клавиатура
     """
     builder = InlineKeyboardBuilder()
 
-    if role == "admin":
+    # Руководитель (supervisor) имеет ПОЛНОСТЬЮ такое же меню как администратор!
+    if role in ["admin", "supervisor"]:
         builder.button(text="📋 Новые замеры", callback_data="list:pending")
         builder.button(text="🔄 В процессе", callback_data="list:in_progress")
         builder.button(text="✅ Выполненные", callback_data="list:completed")
@@ -143,14 +144,14 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
         builder.button(text="👤 Управление пользователями", callback_data="users_list")
 
     elif role == "measurer":
-        builder.button(text="📋 Мои замеры", callback_data="my:assigned")
-        builder.button(text="🔄 В процессе", callback_data="my:in_progress")
-        builder.button(text="✅ Выполненные", callback_data="my:completed")
+        # У замерщика ТОЛЬКО 2 команды: Все замеры и Замеры в работе
+        builder.button(text="📊 Все замеры", callback_data="my:all")
+        builder.button(text="🔄 Замеры в работе", callback_data="my:in_progress")
 
     elif role == "manager":
-        builder.button(text="📋 Мои заказы", callback_data="manager:all")
-        builder.button(text="⏳ Ожидают", callback_data="manager:pending")
-        builder.button(text="✅ Выполненные", callback_data="manager:completed")
+        # У менеджера ТОЛЬКО 2 команды: Все замеры и Замеры в работе
+        builder.button(text="📊 Все замеры", callback_data="manager:all")
+        builder.button(text="🔄 Замеры в работе", callback_data="manager:in_progress")
 
     # Размещаем кнопки в 2 колонки
     builder.adjust(2)

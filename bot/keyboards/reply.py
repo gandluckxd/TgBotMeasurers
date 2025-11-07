@@ -41,22 +41,17 @@ def get_admin_commands_keyboard() -> ReplyKeyboardMarkup:
 def get_measurer_commands_keyboard() -> ReplyKeyboardMarkup:
     """
     Создать клавиатуру с быстрыми командами для замерщика
+    ТОЛЬКО 2 команды: Все замеры и Замеры в работе
 
     Returns:
         Reply клавиатура
     """
     builder = ReplyKeyboardBuilder()
 
-    # Первая строка
+    # Только 2 кнопки как требует пользователь!
     builder.row(
-        KeyboardButton(text="📋 Главное меню"),
-        KeyboardButton(text="📝 Мои замеры")
-    )
-
-    # Вторая строка
-    builder.row(
-        KeyboardButton(text="🔄 В работе"),
-        KeyboardButton(text="✅ Выполненные")
+        KeyboardButton(text="📊 Мои замеры"),
+        KeyboardButton(text="🔄 Мои замеры в работе")
     )
 
     return builder.as_markup(resize_keyboard=True)
@@ -65,22 +60,17 @@ def get_measurer_commands_keyboard() -> ReplyKeyboardMarkup:
 def get_manager_commands_keyboard() -> ReplyKeyboardMarkup:
     """
     Создать клавиатуру с быстрыми командами для менеджера
+    ТОЛЬКО 2 команды: Все замеры и Замеры в работе
 
     Returns:
         Reply клавиатура
     """
     builder = ReplyKeyboardBuilder()
 
-    # Первая строка
+    # Только 2 кнопки как требует пользователь!
     builder.row(
-        KeyboardButton(text="📋 Главное меню"),
-        KeyboardButton(text="📦 Мои заказы")
-    )
-
-    # Вторая строка
-    builder.row(
-        KeyboardButton(text="⏳ Ожидают"),
-        KeyboardButton(text="✅ Выполнено")
+        KeyboardButton(text="📊 Мои заказы"),
+        KeyboardButton(text="🔄 Заказы в работе")
     )
 
     return builder.as_markup(resize_keyboard=True)

@@ -55,12 +55,14 @@ async def cmd_start_measurer(message: Message):
         text += "Вы вошли как <b>Замерщик</b>\n\n"
         text += "📋 Используйте меню ниже для управления вашими замерами:\n\n"
         text += "Доступные команды:\n"
-        text += "/menu - Главное меню\n"
-        text += "/my - Мои замеры\n"
+        text += "• 📊 Все замеры - просмотр всех ваших замеров\n"
+        text += "• 🔄 Замеры в работе - текущие активные замеры\n"
 
-        keyboard = get_main_menu_keyboard("measurer")
+        # Reply клавиатура
+        from bot.keyboards.reply import get_measurer_commands_keyboard
+        reply_keyboard = get_measurer_commands_keyboard()
 
-        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
 
 @measurer_router.message(Command("menu"))
@@ -265,17 +267,28 @@ async def handle_my_measurements(callback: CallbackQuery):
                 return
 
             # Получаем замеры замерщика
-            if status_filter == "assigned":
+            if status_filter == "all":
+                # ВСЕ замеры замерщика
+                measurements = await get_measurements_by_measurer(session, user.id)
+                title = "📊 Все замеры"
+
+            elif status_filter == "in_progress":
+                # ТОЛЬКО замеры в работе (назначенные + в процессе выполнения)
+                assigned_measurements = await get_measurements_by_measurer(
+                    session, user.id, MeasurementStatus.ASSIGNED
+                )
+                in_progress_measurements = await get_measurements_by_measurer(
+                    session, user.id, MeasurementStatus.IN_PROGRESS
+                )
+                # Объединяем списки
+                measurements = list(assigned_measurements) + list(in_progress_measurements)
+                title = "🔄 Замеры в работе"
+
+            elif status_filter == "assigned":
                 measurements = await get_measurements_by_measurer(
                     session, user.id, MeasurementStatus.ASSIGNED
                 )
                 title = "📋 Назначенные замеры"
-
-            elif status_filter == "in_progress":
-                measurements = await get_measurements_by_measurer(
-                    session, user.id, MeasurementStatus.IN_PROGRESS
-                )
-                title = "🔄 Замеры в процессе"
 
             elif status_filter == "completed":
                 measurements = await get_measurements_by_measurer(
@@ -318,6 +331,7 @@ async def handle_back_to_menu(callback: CallbackQuery):
 
         role_map = {
             UserRole.ADMIN: "admin",
+            UserRole.SUPERVISOR: "supervisor",
             UserRole.MEASURER: "measurer",
             UserRole.MANAGER: "manager"
         }
@@ -329,3 +343,79 @@ async def handle_back_to_menu(callback: CallbackQuery):
 
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         await callback.answer()
+
+
+# ========================================
+# Обработчики текстовых кнопок (Reply Keyboard)
+# ========================================
+
+@measurer_router.message(F.text == "📊 Мои замеры")
+async def handle_all_measurements_button(message: Message):
+    """Обработка нажатия кнопки Мои замеры"""
+    async for session in get_db():
+        user = await get_user_by_telegram_id(session, message.from_user.id)
+
+        if not user or user.role != UserRole.MEASURER:
+            return
+
+        # Получаем все замеры замерщика
+        measurements = await get_measurements_by_measurer(session, user.id)
+
+        if not measurements:
+            await message.answer("✅ У вас нет замеров")
+            return
+
+        text = f"📊 <b>Все ваши замеры ({len(measurements)}):</b>\n\n"
+
+        for measurement in measurements[:20]:  # Показываем первые 20
+            text += f"━━━━━━━━━━━━━━━\n"
+            text += measurement.get_info_text(detailed=False)
+            text += "\n"
+
+        await message.answer(text, parse_mode="HTML")
+
+
+@measurer_router.message(F.text == "🔄 Мои замеры в работе")
+async def handle_in_progress_measurements_button(message: Message):
+    """Обработка нажатия кнопки Мои замеры в работе"""
+    async for session in get_db():
+        user = await get_user_by_telegram_id(session, message.from_user.id)
+
+        if not user or user.role != UserRole.MEASURER:
+            return
+
+        # Получаем замеры в работе (назначенные + в процессе)
+        assigned_measurements = await get_measurements_by_measurer(
+            session, user.id, MeasurementStatus.ASSIGNED
+        )
+        in_progress_measurements = await get_measurements_by_measurer(
+            session, user.id, MeasurementStatus.IN_PROGRESS
+        )
+
+        # Объединяем списки
+        measurements = list(assigned_measurements) + list(in_progress_measurements)
+
+        if not measurements:
+            await message.answer("✅ Нет замеров в работе")
+            return
+
+        text = f"🔄 <b>Замеры в работе ({len(measurements)}):</b>\n\n"
+
+        for measurement in measurements:
+            text += f"━━━━━━━━━━━━━━━\n"
+            text += measurement.get_info_text(detailed=False)
+            text += "\n"
+
+        await message.answer(text, parse_mode="HTML")
+
+        # Отправляем каждый замер с кнопками действий
+        for measurement in measurements:
+            msg_text = measurement.get_info_text(detailed=True)
+
+            keyboard = get_measurement_actions_keyboard(
+                measurement.id,
+                is_admin=False,
+                current_status=measurement.status
+            )
+
+            await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
