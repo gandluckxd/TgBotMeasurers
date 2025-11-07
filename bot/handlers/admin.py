@@ -28,7 +28,8 @@ from bot.keyboards.inline import (
     get_role_selection_keyboard
 )
 from bot.keyboards.reply import (
-    get_admin_commands_keyboard
+    get_admin_commands_keyboard,
+    get_keyboard_by_role
 )
 from bot.utils.notifications import (
     send_assignment_notification_to_measurer,
@@ -459,7 +460,7 @@ async def cmd_users(message: Message):
         keyboard = get_users_list_keyboard(users, page=0)
         text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
         text += "✅ - активен | ⛔ - неактивен\n"
-        text += "👑 - админ | 👔 - менеджер | 👷 - замерщик"
+        text += "👑 - админ | 👔 - руководитель | 💼 - менеджер | 👷 - замерщик"
 
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
@@ -478,7 +479,7 @@ async def handle_users_list(callback: CallbackQuery):
             keyboard = get_users_list_keyboard(users, page=0)
             text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
             text += "✅ - активен | ⛔ - неактивен\n"
-            text += "👑 - админ | 👔 - менеджер | 👷 - замерщик"
+            text += "👑 - админ | 👔 - руководитель | 💼 - менеджер | 👷 - замерщик"
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
             await callback.answer()
@@ -504,7 +505,7 @@ async def handle_users_page(callback: CallbackQuery):
 
             text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
             text += "✅ - активен | ⛔ - неактивен\n"
-            text += "👑 - админ | 👔 - менеджер | 👷 - замерщик"
+            text += "👑 - админ | 👔 - руководитель | 💼 - менеджер | 👷 - замерщик"
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
             await callback.answer()
@@ -533,6 +534,7 @@ async def handle_user_detail(callback: CallbackQuery):
 
             role_names = {
                 "admin": "Администратор",
+                "supervisor": "Руководитель",
                 "manager": "Менеджер",
                 "measurer": "Замерщик"
             }
@@ -613,6 +615,7 @@ async def handle_user_set_role(callback: CallbackQuery):
 
             role_names = {
                 "admin": "Администратор",
+                "supervisor": "Руководитель",
                 "manager": "Менеджер",
                 "measurer": "Замерщик"
             }
@@ -638,14 +641,19 @@ async def handle_user_set_role(callback: CallbackQuery):
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
-            # Отправляем уведомление пользователю
+            # Отправляем уведомление пользователю с новой клавиатурой
             try:
                 notification_text = f"🔔 <b>Ваша роль изменена</b>\n\n"
                 notification_text += f"Новая роль: <b>{role_names.get(new_role, new_role)}</b>"
+
+                # Получаем клавиатуру для новой роли
+                reply_keyboard = get_keyboard_by_role(new_role)
+
                 await callback.bot.send_message(
                     user.telegram_id,
                     notification_text,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=reply_keyboard
                 )
             except Exception:
                 pass  # Пользователь может не запускать бота
@@ -678,6 +686,7 @@ async def handle_user_toggle(callback: CallbackQuery):
             # Обновляем информацию
             role_names = {
                 "admin": "Администратор",
+                "supervisor": "Руководитель",
                 "manager": "Менеджер",
                 "measurer": "Замерщик"
             }

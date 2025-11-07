@@ -96,3 +96,23 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text="❌ Отмена")
     return builder.as_markup(resize_keyboard=True)
+
+
+def get_keyboard_by_role(role: str) -> ReplyKeyboardMarkup:
+    """
+    Получить клавиатуру в зависимости от роли пользователя
+
+    Args:
+        role: Роль пользователя (admin, supervisor, manager, measurer)
+
+    Returns:
+        Reply клавиатура
+    """
+    if role in ["admin", "supervisor"]:
+        return get_admin_commands_keyboard()
+    elif role == "manager":
+        return get_manager_commands_keyboard()
+    elif role == "measurer":
+        return get_measurer_commands_keyboard()
+    else:
+        return get_admin_commands_keyboard()  # По умолчанию

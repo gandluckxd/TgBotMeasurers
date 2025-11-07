@@ -221,7 +221,8 @@ def get_users_list_keyboard(users: List[User], page: int = 0, per_page: int = 5)
 
     role_emoji = {
         "admin": "👑",
-        "manager": "👔",
+        "supervisor": "👔",
+        "manager": "💼",
         "measurer": "👷"
     }
 
@@ -324,8 +325,8 @@ def get_role_selection_keyboard(user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     roles = [
-        ("👑 Администратор", "admin"),
-        ("👔 Менеджер", "manager"),
+        ("👔 Руководитель", "supervisor"),
+        ("💼 Менеджер", "manager"),
         ("👷 Замерщик", "measurer")
     ]
 
