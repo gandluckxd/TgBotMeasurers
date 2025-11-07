@@ -1,7 +1,9 @@
 """FastAPI приложение для приема webhook"""
 import hmac
 import hashlib
+import asyncio
 from typing import Dict, Any
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse
@@ -10,11 +12,32 @@ from loguru import logger
 from config import settings
 from server.webhook import WebhookProcessor
 
-# Создаем FastAPI приложение
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Управление жизненным циклом приложения"""
+    # Startup
+    logger.info("FastAPI сервер запускается...")
+    logger.info(f"Webhook URL: {settings.webhook_url}")
+
+    yield
+
+    # Shutdown
+    logger.info("FastAPI сервер останавливается...")
+    try:
+        # Даем время на завершение текущих запросов
+        await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        pass
+    logger.info("FastAPI сервер остановлен")
+
+
+# Создаем FastAPI приложение с lifespan
 app = FastAPI(
     title="Measurers Bot Webhook Server",
     description="Сервер для приема webhook от AmoCRM",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Процессор webhook (будет установлен при запуске бота)
@@ -122,16 +145,3 @@ async def handle_amocrm_webhook(
     except Exception as e:
         logger.error(f"Ошибка обработки webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Событие запуска приложения"""
-    logger.info("FastAPI сервер запускается...")
-    logger.info(f"Webhook URL: {settings.webhook_url}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Событие остановки приложения"""
-    logger.info("FastAPI сервер останавливается...")

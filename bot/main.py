@@ -9,7 +9,8 @@ from aiogram.enums import ParseMode
 
 from config import settings
 from database import db
-from bot.handlers import admin_router, measurer_router, manager_router
+from bot.handlers import registration_router, invite_links_router, admin_router, measurer_router, manager_router
+from bot.middlewares import RoleCheckMiddleware
 
 
 async def on_startup(bot: Bot):
@@ -23,6 +24,47 @@ async def on_startup(bot: Bot):
     except Exception as e:
         logger.error(f"Ошибка создания таблиц БД: {e}")
         sys.exit(1)
+
+    # Регистрируем администраторов из конфига в БД
+    from database import get_db, get_user_by_telegram_id, create_user, UserRole
+
+    for admin_id in settings.admin_ids_list:
+        try:
+            async for session in get_db():
+                # Проверяем, существует ли администратор
+                admin = await get_user_by_telegram_id(session, admin_id)
+
+                if not admin:
+                    # Получаем информацию о пользователе из Telegram
+                    try:
+                        chat = await bot.get_chat(admin_id)
+                        username = chat.username
+                        first_name = chat.first_name
+                        last_name = chat.last_name
+                    except Exception:
+                        username = None
+                        first_name = "Admin"
+                        last_name = None
+
+                    # Создаем администратора
+                    admin = await create_user(
+                        session,
+                        telegram_id=admin_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name,
+                        role=UserRole.ADMIN
+                    )
+                    logger.info(f"Создан администратор: {admin.full_name} (ID: {admin_id})")
+                elif admin.role != UserRole.ADMIN:
+                    # Если пользователь существует, но не админ - повышаем до админа
+                    admin.role = UserRole.ADMIN
+                    await session.commit()
+                    logger.info(f"Пользователь {admin.full_name} повышен до администратора")
+
+                break  # Выходим из async for после первой итерации
+        except Exception as e:
+            logger.error(f"Ошибка при регистрации администратора {admin_id}: {e}", exc_info=True)
 
     # Отправляем уведомление администраторам о запуске
     for admin_id in settings.admin_ids_list:
@@ -89,7 +131,13 @@ async def main():
     # Создаем диспетчер
     dp = Dispatcher()
 
-    # Регистрируем роутеры
+    # Регистрируем middleware для проверки ролей
+    dp.message.middleware(RoleCheckMiddleware())
+    dp.callback_query.middleware(RoleCheckMiddleware())
+
+    # Регистрируем роутеры (registration_router должен быть первым для обработки /start)
+    dp.include_router(registration_router)
+    dp.include_router(invite_links_router)
     dp.include_router(admin_router)
     dp.include_router(measurer_router)
     dp.include_router(manager_router)

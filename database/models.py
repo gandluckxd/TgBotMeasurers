@@ -18,8 +18,9 @@ class Base(DeclarativeBase):
 class UserRole(PyEnum):
     """Роли пользователей"""
     ADMIN = "admin"
-    MEASURER = "measurer"
+    SUPERVISOR = "supervisor"  # Руководитель - может управлять замерами, но не создавать ссылки
     MANAGER = "manager"
+    MEASURER = "measurer"
 
 
 class MeasurementStatus(PyEnum):
@@ -176,5 +177,94 @@ class Measurement(Base):
 
             if self.completed_at:
                 text += f"📅 <b>Выполнено:</b> {self.completed_at.strftime('%d.%m.%Y %H:%M')}\n"
+
+        return text
+
+
+class InviteLink(Base):
+    """Модель пригласительной ссылки"""
+    __tablename__ = "invite_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Уникальный токен ссылки
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+
+    # Роль, которую получит пользователь по этой ссылке
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
+
+    # Кто создал ссылку
+    created_by_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
+
+    # Параметры ссылки
+    max_uses: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # None = неограниченно
+    current_uses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Срок действия
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # None = бессрочная
+
+    # Активность
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    # Временные метки
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<InviteLink(token={self.token}, role={self.role.value}, uses={self.current_uses}/{self.max_uses or '∞'})>"
+
+    @property
+    def is_valid(self) -> bool:
+        """Проверка, действительна ли ссылка"""
+        if not self.is_active:
+            return False
+
+        # Проверка срока действия
+        if self.expires_at and datetime.now() > self.expires_at:
+            return False
+
+        # Проверка лимита использований
+        if self.max_uses is not None and self.current_uses >= self.max_uses:
+            return False
+
+        return True
+
+    @property
+    def role_text(self) -> str:
+        """Текстовое представление роли на русском"""
+        role_map = {
+            UserRole.ADMIN: "👑 Администратор",
+            UserRole.SUPERVISOR: "👔 Руководитель",
+            UserRole.MANAGER: "💼 Менеджер",
+            UserRole.MEASURER: "👷 Замерщик",
+        }
+        return role_map.get(self.role, "❓ Неизвестная роль")
+
+    def get_info_text(self) -> str:
+        """Форматированная информация о ссылке"""
+        text = f"🔗 <b>Пригласительная ссылка</b>\n\n"
+        text += f"🎭 <b>Роль:</b> {self.role_text}\n"
+        text += f"📊 <b>Использований:</b> {self.current_uses}"
+
+        if self.max_uses:
+            text += f" / {self.max_uses}\n"
+        else:
+            text += " / ∞\n"
+
+        if self.expires_at:
+            text += f"⏰ <b>Действительна до:</b> {self.expires_at.strftime('%d.%m.%Y %H:%M')}\n"
+        else:
+            text += "⏰ <b>Срок действия:</b> Бессрочная\n"
+
+        status = "✅ Активна" if self.is_valid else "❌ Неактивна"
+        text += f"📌 <b>Статус:</b> {status}\n"
+
+        text += f"📅 <b>Создана:</b> {self.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+        text += f"🔑 <b>Токен:</b> <code>{self.token}</code>\n"
 
         return text

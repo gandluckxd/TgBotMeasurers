@@ -4,6 +4,8 @@ from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from loguru import logger
 
 from database import (
@@ -12,13 +14,25 @@ from database import (
     get_all_measurers,
     get_measurement_by_id,
     get_measurements_by_status,
+    get_all_users,
+    get_user_by_id,
+    update_user_role,
+    toggle_user_active,
+    create_user_by_telegram_id,
     MeasurementStatus,
     UserRole
 )
 from bot.keyboards.inline import (
     get_measurers_keyboard,
     get_main_menu_keyboard,
-    get_measurement_actions_keyboard
+    get_measurement_actions_keyboard,
+    get_users_list_keyboard,
+    get_user_detail_keyboard,
+    get_role_selection_keyboard
+)
+from bot.keyboards.reply import (
+    get_admin_commands_keyboard,
+    get_cancel_keyboard
 )
 from bot.utils.notifications import (
     send_assignment_notification_to_measurer,
@@ -65,13 +79,22 @@ async def cmd_start(message: Message):
         text += "📋 Используйте меню ниже для управления замерами:\n\n"
         text += "Доступные команды:\n"
         text += "/menu - Главное меню\n"
+        text += "/users - Управление пользователями\n"
         text += "/measurers - Список замерщиков\n"
         text += "/pending - Новые замеры\n"
         text += "/all - Все замеры\n"
 
-        keyboard = get_main_menu_keyboard("admin")
+        # Reply клавиатура с быстрыми командами
+        reply_keyboard = get_admin_commands_keyboard()
+        await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
-        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        # Inline клавиатура с главным меню
+        inline_keyboard = get_main_menu_keyboard("admin")
+        await message.answer(
+            "📋 <b>Или используйте кнопки ниже:</b>",
+            reply_markup=inline_keyboard,
+            parse_mode="HTML"
+        )
 
 
 @admin_router.message(Command("menu"))
@@ -350,3 +373,512 @@ async def handle_list(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка при получении списка: {e}", exc_info=True)
         await callback.answer("❌ Ошибка при получении списка", show_alert=True)
+
+
+# ========================================
+# Обработчики текстовых кнопок (Reply Keyboard)
+# ========================================
+
+@admin_router.message(F.text == "📋 Главное меню")
+async def handle_main_menu_button(message: Message):
+    """Обработка нажатия кнопки Главное меню"""
+    if not is_admin(message.from_user.id):
+        return
+    await cmd_menu(message)
+
+
+@admin_router.message(F.text == "👤 Пользователи")
+async def handle_users_button(message: Message):
+    """Обработка нажатия кнопки Пользователи"""
+    if not is_admin(message.from_user.id):
+        return
+    await cmd_users(message)
+
+
+@admin_router.message(F.text == "🆕 Новые замеры")
+async def handle_pending_button(message: Message):
+    """Обработка нажатия кнопки Новые замеры"""
+    if not is_admin(message.from_user.id):
+        return
+    await cmd_pending(message)
+
+
+@admin_router.message(F.text == "🔄 В процессе")
+async def handle_in_progress_button(message: Message):
+    """Обработка нажатия кнопки В процессе"""
+    if not is_admin(message.from_user.id):
+        return
+
+    async for session in get_db():
+        measurements = await get_measurements_by_status(session, MeasurementStatus.IN_PROGRESS)
+
+        if not measurements:
+            await message.answer("✅ Нет замеров в процессе выполнения")
+            return
+
+        text = f"🔄 <b>Замеры в процессе ({len(measurements)}):</b>\n\n"
+
+        for measurement in measurements:
+            text += f"━━━━━━━━━━━━━━━\n"
+            text += measurement.get_info_text(detailed=False)
+            text += "\n"
+
+        await message.answer(text, parse_mode="HTML")
+
+
+@admin_router.message(F.text == "👥 Замерщики")
+async def handle_measurers_button(message: Message):
+    """Обработка нажатия кнопки Замерщики"""
+    if not is_admin(message.from_user.id):
+        return
+    await cmd_measurers(message)
+
+
+@admin_router.message(F.text == "📊 Все замеры")
+async def handle_all_button(message: Message):
+    """Обработка нажатия кнопки Все замеры"""
+    if not is_admin(message.from_user.id):
+        return
+    await cmd_all(message)
+
+
+# ========================================
+# Управление пользователями
+# ========================================
+
+class AddUserStates(StatesGroup):
+    """Состояния для добавления пользователя"""
+    waiting_for_telegram_id = State()
+    waiting_for_role = State()
+
+
+@admin_router.message(Command("users"))
+async def cmd_users(message: Message):
+    """Показать список всех пользователей"""
+    if not is_admin(message.from_user.id):
+        await message.answer("⚠️ У вас нет доступа к этой команде.")
+        return
+
+    async for session in get_db():
+        users = await get_all_users(session)
+
+        if not users:
+            await message.answer("❌ Нет зарегистрированных пользователей")
+            return
+
+        keyboard = get_users_list_keyboard(users, page=0)
+        text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
+        text += "✅ - активен | ⛔ - неактивен\n"
+        text += "👑 - админ | 👔 - менеджер | 👷 - замерщик"
+
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@admin_router.callback_query(F.data == "users_list")
+async def handle_users_list(callback: CallbackQuery):
+    """Показать список пользователей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        async for session in get_db():
+            users = await get_all_users(session)
+
+            keyboard = get_users_list_keyboard(users, page=0)
+            text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
+            text += "✅ - активен | ⛔ - неактивен\n"
+            text += "👑 - админ | 👔 - менеджер | 👷 - замерщик"
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка пользователей: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при получении списка", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("users_page:"))
+async def handle_users_page(callback: CallbackQuery):
+    """Переключение страницы списка пользователей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        page = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            users = await get_all_users(session)
+            keyboard = get_users_list_keyboard(users, page=page)
+
+            text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
+            text += "✅ - активен | ⛔ - неактивен\n"
+            text += "👑 - админ | 👔 - менеджер | 👷 - замерщик"
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при переключении страницы: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_detail:"))
+async def handle_user_detail(callback: CallbackQuery):
+    """Показать детали пользователя"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        user_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            user = await get_user_by_id(session, user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            role_names = {
+                "admin": "Администратор",
+                "manager": "Менеджер",
+                "measurer": "Замерщик"
+            }
+
+            text = f"👤 <b>Информация о пользователе</b>\n\n"
+            text += f"<b>ID:</b> {user.id}\n"
+            text += f"<b>Telegram ID:</b> {user.telegram_id}\n"
+            text += f"<b>Имя:</b> {user.full_name}\n"
+
+            if user.username:
+                text += f"<b>Username:</b> @{user.username}\n"
+
+            text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n"
+            text += f"<b>Статус:</b> {'✅ Активен' if user.is_active else '⛔ Неактивен'}\n"
+            text += f"<b>Создан:</b> {user.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+
+            keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении деталей пользователя: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_change_role:"))
+async def handle_user_change_role(callback: CallbackQuery):
+    """Показать меню выбора роли"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        user_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            user = await get_user_by_id(session, user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            text = f"🔄 <b>Изменение роли пользователя</b>\n\n"
+            text += f"<b>Пользователь:</b> {user.full_name}\n"
+            text += f"<b>Текущая роль:</b> {user.role.value}\n\n"
+            text += "Выберите новую роль:"
+
+            keyboard = get_role_selection_keyboard(user.id)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при изменении роли: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_set_role:"))
+async def handle_user_set_role(callback: CallbackQuery):
+    """Установить роль пользователя"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        parts = callback.data.split(":")
+        user_id = int(parts[1])
+        new_role = parts[2]
+
+        async for session in get_db():
+            user_role = UserRole(new_role)
+            user = await update_user_role(session, user_id, user_role)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            role_names = {
+                "admin": "Администратор",
+                "manager": "Менеджер",
+                "measurer": "Замерщик"
+            }
+
+            await callback.answer(
+                f"✅ Роль изменена на: {role_names.get(new_role, new_role)}",
+                show_alert=True
+            )
+
+            # Обновляем информацию о пользователе
+            text = f"👤 <b>Информация о пользователе</b>\n\n"
+            text += f"<b>ID:</b> {user.id}\n"
+            text += f"<b>Telegram ID:</b> {user.telegram_id}\n"
+            text += f"<b>Имя:</b> {user.full_name}\n"
+
+            if user.username:
+                text += f"<b>Username:</b> @{user.username}\n"
+
+            text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n"
+            text += f"<b>Статус:</b> {'✅ Активен' if user.is_active else '⛔ Неактивен'}\n"
+
+            keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+            # Отправляем уведомление пользователю
+            try:
+                notification_text = f"🔔 <b>Ваша роль изменена</b>\n\n"
+                notification_text += f"Новая роль: <b>{role_names.get(new_role, new_role)}</b>"
+                await callback.bot.send_message(
+                    user.telegram_id,
+                    notification_text,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass  # Пользователь может не запускать бота
+
+    except Exception as e:
+        logger.error(f"Ошибка при установке роли: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при установке роли", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_toggle:"))
+async def handle_user_toggle(callback: CallbackQuery):
+    """Переключить статус активности пользователя"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        user_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            user = await toggle_user_active(session, user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            status_text = "активирован" if user.is_active else "деактивирован"
+            await callback.answer(f"✅ Пользователь {status_text}", show_alert=True)
+
+            # Обновляем информацию
+            role_names = {
+                "admin": "Администратор",
+                "manager": "Менеджер",
+                "measurer": "Замерщик"
+            }
+
+            text = f"👤 <b>Информация о пользователе</b>\n\n"
+            text += f"<b>ID:</b> {user.id}\n"
+            text += f"<b>Telegram ID:</b> {user.telegram_id}\n"
+            text += f"<b>Имя:</b> {user.full_name}\n"
+
+            if user.username:
+                text += f"<b>Username:</b> @{user.username}\n"
+
+            text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n"
+            text += f"<b>Статус:</b> {'✅ Активен' if user.is_active else '⛔ Неактивен'}\n"
+
+            keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Ошибка при переключении статуса: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@admin_router.callback_query(F.data == "user_add")
+async def handle_user_add(callback: CallbackQuery, state: FSMContext):
+    """Начать процесс добавления пользователя"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    await state.set_state(AddUserStates.waiting_for_telegram_id)
+
+    text = "➕ <b>Добавление нового пользователя</b>\n\n"
+    text += "Отправьте <b>Telegram ID</b> пользователя.\n\n"
+    text += "💡 Подсказка: Пользователь может узнать свой ID через бота @userinfobot\n\n"
+    text += "Или нажмите кнопку <b>❌ Отмена</b> внизу"
+
+    # Показываем кнопку отмены
+    cancel_keyboard = get_cancel_keyboard()
+
+    await callback.message.edit_text(text, parse_mode="HTML")
+    await callback.bot.send_message(
+        callback.from_user.id,
+        "👇 Используйте кнопку для отмены:",
+        reply_markup=cancel_keyboard
+    )
+    await callback.answer()
+
+
+@admin_router.message(AddUserStates.waiting_for_telegram_id, F.text == "❌ Отмена")
+@admin_router.message(AddUserStates.waiting_for_role, F.text == "❌ Отмена")
+async def process_cancel_button(message: Message, state: FSMContext):
+    """Обработка нажатия кнопки Отмена"""
+    if not is_admin(message.from_user.id):
+        return
+
+    await state.clear()
+
+    # Возвращаем основную клавиатуру
+    reply_keyboard = get_admin_commands_keyboard()
+    await message.answer(
+        "❌ Добавление пользователя отменено",
+        reply_markup=reply_keyboard
+    )
+
+
+@admin_router.message(AddUserStates.waiting_for_telegram_id)
+async def process_telegram_id(message: Message, state: FSMContext):
+    """Обработка ввода Telegram ID"""
+    if not is_admin(message.from_user.id):
+        return
+
+    if message.text == "/cancel":
+        await state.clear()
+        reply_keyboard = get_admin_commands_keyboard()
+        await message.answer(
+            "❌ Добавление пользователя отменено",
+            reply_markup=reply_keyboard
+        )
+        return
+
+    try:
+        telegram_id = int(message.text.strip())
+
+        # Проверяем, не существует ли уже пользователь
+        async for session in get_db():
+            existing_user = await get_user_by_telegram_id(session, telegram_id)
+
+            if existing_user:
+                await message.answer(
+                    f"⚠️ Пользователь с ID {telegram_id} уже существует!\n\n"
+                    f"Имя: {existing_user.full_name}\n"
+                    f"Роль: {existing_user.role.value}\n\n"
+                    "Вы можете изменить его роль через список пользователей."
+                )
+                await state.clear()
+                return
+
+        # Сохраняем ID и переходим к выбору роли
+        await state.update_data(telegram_id=telegram_id)
+
+        text = "🎭 <b>Выберите роль для пользователя:</b>\n\n"
+        text += "👑 /admin - Администратор (полный доступ)\n"
+        text += "👔 /manager - Менеджер (управление своими заказами)\n"
+        text += "👷 /measurer - Замерщик (выполнение замеров)\n\n"
+        text += "Или отправьте /cancel для отмены"
+
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(AddUserStates.waiting_for_role)
+
+    except ValueError:
+        await message.answer(
+            "❌ Неверный формат!\n\n"
+            "Telegram ID должен быть числом.\n"
+            "Попробуйте еще раз или отправьте /cancel"
+        )
+
+
+@admin_router.message(AddUserStates.waiting_for_role, Command("admin"))
+@admin_router.message(AddUserStates.waiting_for_role, Command("manager"))
+@admin_router.message(AddUserStates.waiting_for_role, Command("measurer"))
+async def process_role(message: Message, state: FSMContext):
+    """Обработка выбора роли"""
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        role_map = {
+            "/admin": UserRole.ADMIN,
+            "/manager": UserRole.MANAGER,
+            "/measurer": UserRole.MEASURER
+        }
+
+        role = role_map[message.text]
+        data = await state.get_data()
+        telegram_id = data["telegram_id"]
+
+        async for session in get_db():
+            user = await create_user_by_telegram_id(session, telegram_id, role)
+
+            role_names = {
+                "admin": "Администратор",
+                "manager": "Менеджер",
+                "measurer": "Замерщик"
+            }
+
+            text = f"✅ <b>Пользователь добавлен!</b>\n\n"
+            text += f"<b>Telegram ID:</b> {user.telegram_id}\n"
+            text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n\n"
+            text += "Пользователь может использовать команду /start для начала работы."
+
+            # Возвращаем основную клавиатуру
+            reply_keyboard = get_admin_commands_keyboard()
+            await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
+
+            # Отправляем уведомление пользователю
+            try:
+                notification_text = f"🎉 <b>Вы добавлены в систему!</b>\n\n"
+                notification_text += f"Роль: <b>{role_names.get(user.role.value, user.role.value)}</b>\n\n"
+                notification_text += "Используйте /start для начала работы."
+                await message.bot.send_message(
+                    telegram_id,
+                    notification_text,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                await message.answer(
+                    "⚠️ Не удалось отправить уведомление пользователю.\n"
+                    "Возможно, он еще не запустил бота."
+                )
+
+        await state.clear()
+
+    except Exception as e:
+        logger.error(f"Ошибка при создании пользователя: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при создании пользователя")
+        await state.clear()
+
+
+@admin_router.message(AddUserStates.waiting_for_role)
+async def process_invalid_role(message: Message):
+    """Обработка неверного выбора роли"""
+    if not is_admin(message.from_user.id):
+        return
+
+    await message.answer(
+        "❌ Неверная команда!\n\n"
+        "Выберите роль:\n"
+        "👑 /admin\n"
+        "👔 /manager\n"
+        "👷 /measurer\n\n"
+        "Или отправьте /cancel для отмены"
+    )

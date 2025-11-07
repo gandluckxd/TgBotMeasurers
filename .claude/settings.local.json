@@ -4,7 +4,12 @@
       "Bash(mkdir:*)",
       "Bash(tree:*)",
       "Bash(pip install:*)",
-      "Bash(if exist \"measurerers_bot.db\" del measurerers_bot.db)"
+      "Bash(if exist \"measurerers_bot.db\" del measurerers_bot.db)",
+      "Bash(d:/TgBotMeasurers/venv/Scripts/python.exe:*)",
+      "Bash(python:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
