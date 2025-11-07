@@ -154,32 +154,61 @@ class WebhookProcessor:
             create_measurement,
             get_measurement_by_amocrm_id
         )
+        from services.amocrm import amocrm_client
 
         try:
-            # Получаем данные из AmoCRM API (детальную информацию)
-            # TODO: Реализовать получение полных данных через AmoCRM API
-            # Пока используем данные из webhook
+            # Получаем полную информацию о сделке через AmoCRM API
+            logger.info(f"Запрашиваем полную информацию о сделке #{lead_id} через API")
+            full_info = await amocrm_client.get_lead_full_info(lead_id)
 
-            client_name = lead_data.get("name", "Неизвестный клиент")
+            if not full_info:
+                logger.error(f"Не удалось получить информацию о сделке #{lead_id} из AmoCRM API")
+                # Fallback на данные из вебхука
+                full_info = {
+                    "lead": lead_data,
+                    "contacts": [],
+                    "responsible_user": None
+                }
 
-            # Извлекаем телефон и адрес из кастомных полей
-            custom_fields = lead_data.get("custom_fields_values", [])
+            lead = full_info.get("lead", {})
+            contacts = full_info.get("contacts", [])
+            responsible_user = full_info.get("responsible_user")
+
+            # Извлекаем данные из сделки
+            client_name = lead.get("name", "Неизвестный клиент")
+
+            # Извлекаем телефон и адрес из контактов или кастомных полей
             phone = None
             address = None
 
-            for field in custom_fields:
+            # Пробуем получить из контактов
+            if contacts:
+                first_contact = contacts[0]
+                custom_fields = first_contact.get("custom_fields_values", [])
+
+                for field in custom_fields:
+                    field_code = field.get("field_code")
+                    values = field.get("values", [])
+
+                    if field_code == "PHONE" and values:
+                        phone = values[0].get("value")
+                    elif field_code == "EMAIL" and values and not phone:
+                        # Если нет телефона, хотя бы сохраним email
+                        phone = values[0].get("value")
+
+            # Пробуем получить адрес из кастомных полей сделки
+            lead_custom_fields = lead.get("custom_fields_values", [])
+            for field in lead_custom_fields:
                 field_code = field.get("field_code")
                 values = field.get("values", [])
 
-                if field_code == "PHONE" and values:
-                    phone = values[0].get("value")
-                elif field_code in ["ADDRESS", "ADRES"] and values:
+                if field_code in ["ADDRESS", "ADRES", "address"] and values:
                     address = values[0].get("value")
 
             if not address:
                 address = "Адрес не указан"
 
-            responsible_user_id = lead_data.get("responsible_user_id")
+            responsible_user_id = lead.get("responsible_user_id")
 
             # Создаем замер в БД
             async for session in get_db():

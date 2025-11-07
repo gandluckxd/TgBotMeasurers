@@ -2,10 +2,158 @@
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from loguru import logger
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from database.models import Measurement, User
 from bot.keyboards.inline import get_measurers_keyboard, get_measurement_actions_keyboard
+
+
+def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
+    """
+    Форматирование информации о сделке из AmoCRM для красивого уведомления
+
+    Args:
+        full_info: Полная информация о сделке из AmoCRM API
+
+    Returns:
+        Отформатированный текст уведомления
+    """
+    lead = full_info.get("lead", {})
+    contacts = full_info.get("contacts", [])
+    responsible_user = full_info.get("responsible_user")
+
+    # Основная информация
+    text = "🆕 <b>Новая заявка из AmoCRM!</b>\n\n"
+
+    # Название сделки
+    lead_name = lead.get("name", "Без названия")
+    lead_id = lead.get("id")
+    text += f"📋 <b>Сделка:</b> {lead_name} (ID: {lead_id})\n"
+
+    # Стоимость
+    price = lead.get("price", 0)
+    if price:
+        text += f"💰 <b>Сумма:</b> {price:,.0f} ₽\n"
+
+    text += "\n"
+
+    # Информация о клиенте
+    if contacts:
+        contact = contacts[0]  # Берем первый контакт
+        contact_name = contact.get("name", "Не указано")
+        text += f"👤 <b>Клиент:</b> {contact_name}\n"
+
+        # Ищем телефон и email в кастомных полях контакта
+        custom_fields = contact.get("custom_fields_values", [])
+
+        for field in custom_fields:
+            field_code = field.get("field_code")
+            values = field.get("values", [])
+
+            if values:
+                value = values[0].get("value")
+
+                if field_code == "PHONE":
+                    text += f"📱 <b>Телефон:</b> {value}\n"
+                elif field_code == "EMAIL":
+                    text += f"📧 <b>Email:</b> {value}\n"
+    else:
+        text += "👤 <b>Клиент:</b> Не указан\n"
+
+    # Адрес из кастомных полей сделки
+    lead_custom_fields = lead.get("custom_fields_values", [])
+    address_found = False
+
+    for field in lead_custom_fields:
+        field_code = field.get("field_code")
+        values = field.get("values", [])
+
+        if field_code in ["ADDRESS", "ADRES", "address"] and values:
+            address = values[0].get("value")
+            text += f"📍 <b>Адрес:</b> {address}\n"
+            address_found = True
+            break
+
+    if not address_found:
+        text += f"📍 <b>Адрес:</b> Не указан\n"
+
+    # Ответственный менеджер
+    if responsible_user:
+        manager_name = responsible_user.get("name", "Не указан")
+        text += f"\n👨‍💼 <b>Менеджер в AmoCRM:</b> {manager_name}\n"
+
+    # Дата создания
+    created_at = lead.get("created_at")
+    if created_at:
+        from datetime import datetime
+        created_date = datetime.fromtimestamp(created_at)
+        text += f"📅 <b>Создано:</b> {created_date.strftime('%d.%m.%Y %H:%M')}\n"
+
+    return text
+
+
+async def notify_measurers_about_new_lead(full_info: Dict[str, Any]) -> None:
+    """
+    Отправить уведомления замерщикам о новой сделке из AmoCRM
+
+    Args:
+        full_info: Полная информация о сделке из AmoCRM API
+    """
+    from database import get_db, get_all_measurers
+    from config import settings
+
+    try:
+        # Форматируем красивое уведомление
+        notification_text = format_lead_info_for_notification(full_info)
+        notification_text += "\n\n⏳ <i>Ожидаем назначения замерщика...</i>"
+
+        # Получаем список замерщиков
+        async for session in get_db():
+            measurers = await get_all_measurers(session)
+
+            if not measurers:
+                logger.warning("Нет доступных замерщиков для уведомления")
+                return
+
+            # Получаем экземпляр бота
+            from bot import get_bot
+            bot = get_bot()
+
+            if not bot:
+                logger.error("Не удалось получить экземпляр бота")
+                return
+
+            # Отправляем уведомления всем замерщикам
+            for measurer in measurers:
+                try:
+                    await bot.send_message(
+                        chat_id=measurer.telegram_id,
+                        text=notification_text,
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Отправлено уведомление замерщику {measurer.full_name} ({measurer.telegram_id})")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления замерщику {measurer.telegram_id}: {e}")
+
+            # Также уведомляем администраторов
+            for admin_id in settings.admin_ids_list:
+                try:
+                    admin_text = notification_text.replace(
+                        "⏳ <i>Ожидаем назначения замерщика...</i>",
+                        "👇 <b>Назначьте замерщика через команду или интерфейс бота</b>"
+                    )
+
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=admin_text,
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Отправлено уведомление администратору {admin_id}")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления администратору {admin_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомлений о новой сделке: {e}", exc_info=True)
 
 
 async def send_new_measurement_to_admin(

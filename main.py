@@ -63,6 +63,10 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
+    # Регистрируем глобальный экземпляр бота
+    from bot import set_bot
+    set_bot(bot)
+
     # Создаем и устанавливаем webhook процессор
     webhook_processor = WebhookProcessor(bot_instance=bot)
     set_webhook_processor(webhook_processor)

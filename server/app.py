@@ -119,17 +119,79 @@ async def handle_amocrm_webhook(
         # Получаем тело запроса
         body = await request.body()
 
+        # Логируем для отладки
+        logger.info(f"Получен webhook запрос:")
+        logger.info(f"Headers: {dict(request.headers)}")
+        logger.info(f"Body length: {len(body)}")
+        logger.info(f"Body (raw): {body[:500]}")  # Первые 500 байт
+
+        # Если тело пустое - это может быть проверочный запрос от AmoCRM
+        if not body or len(body) == 0:
+            logger.warning("Получен пустой webhook (возможно, проверочный запрос от AmoCRM)")
+            return JSONResponse(content={"status": "ok", "message": "Empty webhook accepted"})
+
         # Проверяем подпись (опционально, если настроена в AmoCRM)
         # if settings.webhook_secret:
         #     if not verify_webhook_signature(body, x_signature):
         #         raise HTTPException(status_code=403, detail="Invalid signature")
 
-        # Парсим JSON
+        # Парсим данные
         try:
-            data = await request.json()
+            # AmoCRM может отправлять данные как JSON или как form-data
+            content_type = request.headers.get("content-type", "")
+
+            if "application/json" in content_type:
+                data = await request.json()
+            elif "application/x-www-form-urlencoded" in content_type:
+                # AmoCRM отправляет данные в URL-encoded формате
+                from urllib.parse import parse_qs
+
+                # Парсим URL-encoded данные
+                parsed = parse_qs(body.decode('utf-8'))
+
+                # Преобразуем в удобный формат
+                # parse_qs возвращает списки, берём первое значение
+                data = {}
+
+                # Обрабатываем leads[status][0][...]
+                if any(key.startswith('leads[') for key in parsed.keys()):
+                    data['leads'] = {'status': []}
+
+                    lead_item = {}
+                    for key, value in parsed.items():
+                        if key.startswith('leads[status][0]'):
+                            # Извлекаем имя поля из ключа
+                            # leads[status][0][id] -> id
+                            field_name = key.split('[')[-1].rstrip(']')
+                            lead_item[field_name] = int(value[0]) if value[0].isdigit() else value[0]
+
+                    if lead_item:
+                        data['leads']['status'].append(lead_item)
+
+                # Добавляем информацию об аккаунте
+                if 'account[id]' in parsed:
+                    data['account'] = {
+                        'id': int(parsed['account[id]'][0]),
+                        'subdomain': parsed.get('account[subdomain]', [''])[0]
+                    }
+
+            else:
+                # Пробуем распарсить как JSON
+                import json
+                data = json.loads(body.decode('utf-8'))
+
+            logger.info(f"Распарсенные данные: {data}")
+
         except Exception as e:
-            logger.error(f"Ошибка парсинга JSON: {e}")
-            raise HTTPException(status_code=400, detail="Invalid JSON")
+            logger.error(f"Ошибка парсинга данных: {e}")
+            logger.error(f"Content-Type: {request.headers.get('content-type')}")
+            logger.error(f"Body: {body.decode('utf-8', errors='ignore')}")
+
+            # Возвращаем OK, чтобы AmoCRM не ретраил
+            return JSONResponse(
+                content={"status": "error", "message": f"Parse error: {str(e)}"},
+                status_code=200  # Намеренно 200, чтобы AmoCRM не повторял запрос
+            )
 
         # Обрабатываем webhook
         if not webhook_processor:
@@ -144,4 +206,8 @@ async def handle_amocrm_webhook(
         raise
     except Exception as e:
         logger.error(f"Ошибка обработки webhook: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Возвращаем 200 даже при ошибке, чтобы AmoCRM не ретраил
+        return JSONResponse(
+            content={"status": "error", "message": str(e)},
+            status_code=200
+        )
