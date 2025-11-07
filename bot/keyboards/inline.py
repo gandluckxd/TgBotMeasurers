@@ -254,10 +254,10 @@ def get_users_list_keyboard(users: List[User], page: int = 0, per_page: int = 5)
     if nav_buttons:
         builder.row(*nav_buttons)
 
-    # Кнопка добавления нового пользователя
+    # Кнопка для управления пригласительными ссылками
     builder.row(InlineKeyboardButton(
-        text="➕ Добавить пользователя",
-        callback_data="user_add"
+        text="🔗 Пригласительные ссылки",
+        callback_data="invite_links"
     ))
 
     # Кнопка назад в главное меню
@@ -412,7 +412,7 @@ def get_invite_links_keyboard(
         InlineKeyboardButton(text="➕ Создать ссылку", callback_data="invite_create")
     )
     builder.row(
-        InlineKeyboardButton(text="🔙 Назад", callback_data="main_menu")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="menu")
     )
 
     return builder.as_markup()

@@ -4,8 +4,6 @@ from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from loguru import logger
 
 from database import (
@@ -18,7 +16,6 @@ from database import (
     get_user_by_id,
     update_user_role,
     toggle_user_active,
-    create_user_by_telegram_id,
     MeasurementStatus,
     UserRole
 )
@@ -31,8 +28,7 @@ from bot.keyboards.inline import (
     get_role_selection_keyboard
 )
 from bot.keyboards.reply import (
-    get_admin_commands_keyboard,
-    get_cancel_keyboard
+    get_admin_commands_keyboard
 )
 from bot.utils.notifications import (
     send_assignment_notification_to_measurer,
@@ -446,12 +442,6 @@ async def handle_all_button(message: Message):
 # Управление пользователями
 # ========================================
 
-class AddUserStates(StatesGroup):
-    """Состояния для добавления пользователя"""
-    waiting_for_telegram_id = State()
-    waiting_for_role = State()
-
-
 @admin_router.message(Command("users"))
 async def cmd_users(message: Message):
     """Показать список всех пользователей"""
@@ -712,173 +702,33 @@ async def handle_user_toggle(callback: CallbackQuery):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data == "user_add")
-async def handle_user_add(callback: CallbackQuery, state: FSMContext):
-    """Начать процесс добавления пользователя"""
+@admin_router.callback_query(F.data == "measurers_list")
+async def handle_measurers_list(callback: CallbackQuery):
+    """Показать список замерщиков через callback"""
     if not is_admin(callback.from_user.id):
         await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
         return
 
-    await state.set_state(AddUserStates.waiting_for_telegram_id)
-
-    text = "➕ <b>Добавление нового пользователя</b>\n\n"
-    text += "Отправьте <b>Telegram ID</b> пользователя.\n\n"
-    text += "💡 Подсказка: Пользователь может узнать свой ID через бота @userinfobot\n\n"
-    text += "Или нажмите кнопку <b>❌ Отмена</b> внизу"
-
-    # Показываем кнопку отмены
-    cancel_keyboard = get_cancel_keyboard()
-
-    await callback.message.edit_text(text, parse_mode="HTML")
-    await callback.bot.send_message(
-        callback.from_user.id,
-        "👇 Используйте кнопку для отмены:",
-        reply_markup=cancel_keyboard
-    )
-    await callback.answer()
-
-
-@admin_router.message(AddUserStates.waiting_for_telegram_id, F.text == "❌ Отмена")
-@admin_router.message(AddUserStates.waiting_for_role, F.text == "❌ Отмена")
-async def process_cancel_button(message: Message, state: FSMContext):
-    """Обработка нажатия кнопки Отмена"""
-    if not is_admin(message.from_user.id):
-        return
-
-    await state.clear()
-
-    # Возвращаем основную клавиатуру
-    reply_keyboard = get_admin_commands_keyboard()
-    await message.answer(
-        "❌ Добавление пользователя отменено",
-        reply_markup=reply_keyboard
-    )
-
-
-@admin_router.message(AddUserStates.waiting_for_telegram_id)
-async def process_telegram_id(message: Message, state: FSMContext):
-    """Обработка ввода Telegram ID"""
-    if not is_admin(message.from_user.id):
-        return
-
-    if message.text == "/cancel":
-        await state.clear()
-        reply_keyboard = get_admin_commands_keyboard()
-        await message.answer(
-            "❌ Добавление пользователя отменено",
-            reply_markup=reply_keyboard
-        )
-        return
-
     try:
-        telegram_id = int(message.text.strip())
-
-        # Проверяем, не существует ли уже пользователь
         async for session in get_db():
-            existing_user = await get_user_by_telegram_id(session, telegram_id)
+            measurers = await get_all_measurers(session)
 
-            if existing_user:
-                await message.answer(
-                    f"⚠️ Пользователь с ID {telegram_id} уже существует!\n\n"
-                    f"Имя: {existing_user.full_name}\n"
-                    f"Роль: {existing_user.role.value}\n\n"
-                    "Вы можете изменить его роль через список пользователей."
-                )
-                await state.clear()
-                return
+            if not measurers:
+                text = "❌ Нет зарегистрированных замерщиков"
+            else:
+                text = "👥 <b>Список замерщиков:</b>\n\n"
+                for idx, measurer in enumerate(measurers, 1):
+                    text += f"{idx}. {measurer.full_name}"
+                    if measurer.username:
+                        text += f" (@{measurer.username})"
+                    text += f" - ID: {measurer.telegram_id}\n"
 
-        # Сохраняем ID и переходим к выбору роли
-        await state.update_data(telegram_id=telegram_id)
-
-        text = "🎭 <b>Выберите роль для пользователя:</b>\n\n"
-        text += "👑 /admin - Администратор (полный доступ)\n"
-        text += "👔 /manager - Менеджер (управление своими заказами)\n"
-        text += "👷 /measurer - Замерщик (выполнение замеров)\n\n"
-        text += "Или отправьте /cancel для отмены"
-
-        await message.answer(text, parse_mode="HTML")
-        await state.set_state(AddUserStates.waiting_for_role)
-
-    except ValueError:
-        await message.answer(
-            "❌ Неверный формат!\n\n"
-            "Telegram ID должен быть числом.\n"
-            "Попробуйте еще раз или отправьте /cancel"
-        )
-
-
-@admin_router.message(AddUserStates.waiting_for_role, Command("admin"))
-@admin_router.message(AddUserStates.waiting_for_role, Command("manager"))
-@admin_router.message(AddUserStates.waiting_for_role, Command("measurer"))
-async def process_role(message: Message, state: FSMContext):
-    """Обработка выбора роли"""
-    if not is_admin(message.from_user.id):
-        return
-
-    try:
-        role_map = {
-            "/admin": UserRole.ADMIN,
-            "/manager": UserRole.MANAGER,
-            "/measurer": UserRole.MEASURER
-        }
-
-        role = role_map[message.text]
-        data = await state.get_data()
-        telegram_id = data["telegram_id"]
-
-        async for session in get_db():
-            user = await create_user_by_telegram_id(session, telegram_id, role)
-
-            role_names = {
-                "admin": "Администратор",
-                "manager": "Менеджер",
-                "measurer": "Замерщик"
-            }
-
-            text = f"✅ <b>Пользователь добавлен!</b>\n\n"
-            text += f"<b>Telegram ID:</b> {user.telegram_id}\n"
-            text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n\n"
-            text += "Пользователь может использовать команду /start для начала работы."
-
-            # Возвращаем основную клавиатуру
-            reply_keyboard = get_admin_commands_keyboard()
-            await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
-
-            # Отправляем уведомление пользователю
-            try:
-                notification_text = f"🎉 <b>Вы добавлены в систему!</b>\n\n"
-                notification_text += f"Роль: <b>{role_names.get(user.role.value, user.role.value)}</b>\n\n"
-                notification_text += "Используйте /start для начала работы."
-                await message.bot.send_message(
-                    telegram_id,
-                    notification_text,
-                    parse_mode="HTML"
-                )
-            except Exception:
-                await message.answer(
-                    "⚠️ Не удалось отправить уведомление пользователю.\n"
-                    "Возможно, он еще не запустил бота."
-                )
-
-        await state.clear()
+            keyboard = get_main_menu_keyboard("admin")
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
 
     except Exception as e:
-        logger.error(f"Ошибка при создании пользователя: {e}", exc_info=True)
-        await message.answer("❌ Ошибка при создании пользователя")
-        await state.clear()
+        logger.error(f"Ошибка при получении списка замерщиков: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при получении списка", show_alert=True)
 
 
-@admin_router.message(AddUserStates.waiting_for_role)
-async def process_invalid_role(message: Message):
-    """Обработка неверного выбора роли"""
-    if not is_admin(message.from_user.id):
-        return
-
-    await message.answer(
-        "❌ Неверная команда!\n\n"
-        "Выберите роль:\n"
-        "👑 /admin\n"
-        "👔 /manager\n"
-        "👷 /measurer\n\n"
-        "Или отправьте /cancel для отмены"
-    )
