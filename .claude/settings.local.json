@@ -9,7 +9,11 @@
       "Bash(python:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(d:\\TgBotMeasurers\\venv\\Scripts\\python.exe:*)",
+      "Bash(venv\\Scripts\\python.exe:*)",
+      "Bash(where:*)",
+      "Bash(del test_amocrm.py test_token_simple.py get_amocrm_tokens.py amocrm_auth_link.py)"
     ],
     "deny": [],
     "ask": []

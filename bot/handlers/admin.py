@@ -101,6 +101,8 @@ async def cmd_start(message: Message, has_admin_access: bool = False):
         text += "/measurers - Список замерщиков\n"
         text += "/pending - Новые замеры\n"
         text += "/all - Все замеры\n"
+        text += "/measurement ID - Просмотр замера по ID\n"
+        text += "/assign ID - Назначить замерщика на замер\n"
 
         # Reply клавиатура с быстрыми командами
         reply_keyboard = get_admin_commands_keyboard()
@@ -169,26 +171,19 @@ async def cmd_pending(message: Message, has_admin_access: bool = False):
             await message.answer("✅ Нет новых замеров, ожидающих назначения")
             return
 
-        text = f"📋 <b>Новые замеры ({len(measurements)}):</b>\n\n"
+        await message.answer(f"📋 <b>Новые замеры ({len(measurements)}):</b>", parse_mode="HTML")
 
+        # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
-            text += f"━━━━━━━━━━━━━━━\n"
-            text += measurement.get_info_text(detailed=False)
-            text += "\n"
+            msg_text = measurement.get_info_text(detailed=True)
 
-        await message.answer(text, parse_mode="HTML")
+            keyboard = get_measurement_actions_keyboard(
+                measurement.id,
+                is_admin=True,
+                current_status=measurement.status
+            )
 
-        # Отправляем каждый замер с кнопками для назначения
-        measurers = await get_all_measurers(session)
-
-        if measurers:
-            for measurement in measurements:
-                msg_text = measurement.get_info_text(detailed=True)
-                msg_text += "\n\n👇 <b>Выберите замерщика:</b>"
-
-                keyboard = get_measurers_keyboard(measurers, measurement.id)
-
-                await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
+            await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @admin_router.message(Command("all"))
@@ -211,14 +206,114 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
             await message.answer("❌ Нет замеров")
             return
 
-        text = f"📊 <b>Все замеры (последние 20):</b>\n\n"
+        await message.answer(f"📊 <b>Все замеры (последние 20):</b>", parse_mode="HTML")
 
+        # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
-            text += f"━━━━━━━━━━━━━━━\n"
-            text += measurement.get_info_text(detailed=False)
-            text += "\n"
+            msg_text = measurement.get_info_text(detailed=True)
 
-        await message.answer(text, parse_mode="HTML")
+            keyboard = get_measurement_actions_keyboard(
+                measurement.id,
+                is_admin=True,
+                current_status=measurement.status
+            )
+
+            await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@admin_router.message(Command("measurement"))
+async def cmd_measurement(message: Message, has_admin_access: bool = False):
+    """Показать информацию о замере по ID
+
+    Использование: /measurement <ID замера>
+    Пример: /measurement 123
+    """
+    if not has_admin_access and not is_admin(message.from_user.id):
+        await message.answer("⚠️ У вас нет доступа к этой команде.")
+        return
+
+    # Парсим ID замера из команды
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "⚠️ Укажите ID замера\n\n"
+            "Использование: <code>/measurement ID_замера</code>\n"
+            "Пример: <code>/measurement 123</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    try:
+        measurement_id = int(args[1])
+    except ValueError:
+        await message.answer("⚠️ ID замера должен быть числом")
+        return
+
+    async for session in get_db():
+        measurement = await get_measurement_by_id(session, measurement_id)
+
+        if not measurement:
+            await message.answer(f"❌ Замер #{measurement_id} не найден")
+            return
+
+        text = measurement.get_info_text(detailed=True)
+
+        keyboard = get_measurement_actions_keyboard(
+            measurement.id,
+            is_admin=True,
+            current_status=measurement.status
+        )
+
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@admin_router.message(Command("assign"))
+async def cmd_assign(message: Message, has_admin_access: bool = False):
+    """Назначить замерщика на замер по ID
+
+    Использование: /assign <ID замера>
+    Пример: /assign 123
+    """
+    if not has_admin_access and not is_admin(message.from_user.id):
+        await message.answer("⚠️ У вас нет доступа к этой команде.")
+        return
+
+    # Парсим ID замера из команды
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "⚠️ Укажите ID замера\n\n"
+            "Использование: <code>/assign ID_замера</code>\n"
+            "Пример: <code>/assign 123</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    try:
+        measurement_id = int(args[1])
+    except ValueError:
+        await message.answer("⚠️ ID замера должен быть числом")
+        return
+
+    async for session in get_db():
+        measurement = await get_measurement_by_id(session, measurement_id)
+
+        if not measurement:
+            await message.answer(f"❌ Замер #{measurement_id} не найден")
+            return
+
+        measurers = await get_all_measurers(session)
+
+        if not measurers:
+            await message.answer("❌ Нет доступных замерщиков")
+            return
+
+        text = measurement.get_info_text(detailed=True)
+        text += "\n\n👇 <b>Выберите замерщика:</b>"
+
+        keyboard = get_measurers_keyboard(measurers, measurement.id)
+
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @admin_router.callback_query(F.data.startswith("assign:"))
@@ -255,9 +350,9 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
             # Сохраняем старого замерщика для уведомления
             old_measurer = measurement.measurer
 
-            # Назначаем замерщика
+            # Назначаем замерщика и сразу ставим статус "В работе"
             measurement.measurer_id = measurer.id
-            measurement.status = MeasurementStatus.ASSIGNED
+            measurement.status = MeasurementStatus.IN_PROGRESS
             measurement.assigned_at = datetime.now()
 
             await session.commit()
@@ -380,17 +475,29 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
 
             if not measurements:
                 text = f"{title}\n\n❌ Нет замеров"
+                keyboard = get_main_menu_keyboard("admin")
+                await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
             else:
-                text = f"<b>{title} ({len(measurements)}):</b>\n\n"
+                # Отправляем заголовок
+                await callback.message.edit_text(f"<b>{title} ({len(measurements)}):</b>", parse_mode="HTML")
 
-                for measurement in measurements[:10]:  # Показываем первые 10
-                    text += f"━━━━━━━━━━━━━━━\n"
-                    text += measurement.get_info_text(detailed=False)
-                    text += "\n"
+                # Отправляем каждый замер отдельным сообщением с inline кнопкой
+                for measurement in measurements:
+                    msg_text = measurement.get_info_text(detailed=True)
 
-            keyboard = get_main_menu_keyboard("admin")
+                    keyboard = get_measurement_actions_keyboard(
+                        measurement.id,
+                        is_admin=True,
+                        current_status=measurement.status
+                    )
 
-            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+                    await callback.bot.send_message(
+                        callback.message.chat.id,
+                        msg_text,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+
             await callback.answer()
 
     except Exception as e:

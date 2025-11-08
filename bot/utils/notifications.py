@@ -226,16 +226,10 @@ async def send_assignment_notification_to_measurer(
         text = "📋 <b>Вам назначен новый замер!</b>\n\n"
         text += measurement.get_info_text(detailed=True)
 
-        keyboard = get_measurement_actions_keyboard(
-            measurement.id,
-            is_admin=False,
-            current_status=measurement.status
-        )
-
+        # Уведомление БЕЗ кнопок
         await bot.send_message(
             chat_id=measurer.telegram_id,
             text=text,
-            reply_markup=keyboard,
             parse_mode="HTML"
         )
 

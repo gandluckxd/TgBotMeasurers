@@ -11,13 +11,15 @@ class AmoCRMClient:
     """Клиент для работы с AmoCRM API"""
 
     def __init__(self):
+        # Используем поддомен из настроек
         self.base_url = f"https://{settings.amocrm_subdomain}.amocrm.ru/api/v4"
         self.access_token = settings.amocrm_access_token
         self.refresh_token = settings.amocrm_refresh_token
         self.client_id = settings.amocrm_client_id
         self.client_secret = settings.amocrm_client_secret
         self.redirect_uri = settings.amocrm_redirect_uri
-        self.token_expires_at = 0
+        # Долгосрочный токен действует до 2030 года
+        self.token_expires_at = 1919548800  # 2030-10-20
 
     async def refresh_access_token(self) -> bool:
         """

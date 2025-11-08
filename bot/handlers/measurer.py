@@ -101,16 +101,9 @@ async def cmd_my_measurements(message: Message):
             await message.answer("✅ У вас нет активных замеров")
             return
 
-        text = f"📋 <b>Ваши активные замеры ({len(active_measurements)}):</b>\n\n"
+        await message.answer(f"📋 <b>Ваши активные замеры ({len(active_measurements)}):</b>", parse_mode="HTML")
 
-        for measurement in active_measurements:
-            text += f"━━━━━━━━━━━━━━━\n"
-            text += measurement.get_info_text(detailed=False)
-            text += "\n"
-
-        await message.answer(text, parse_mode="HTML")
-
-        # Отправляем каждый замер с кнопками действий
+        # Отправляем каждый замер отдельным сообщением с кнопками действий
         for measurement in active_measurements:
             msg_text = measurement.get_info_text(detailed=True)
 
@@ -301,17 +294,29 @@ async def handle_my_measurements(callback: CallbackQuery):
 
             if not measurements:
                 text = f"{title}\n\n❌ Нет замеров"
+                keyboard = get_main_menu_keyboard("measurer")
+                await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
             else:
-                text = f"<b>{title} ({len(measurements)}):</b>\n\n"
+                # Отправляем заголовок
+                await callback.message.edit_text(f"<b>{title} ({len(measurements)}):</b>", parse_mode="HTML")
 
-                for measurement in measurements[:10]:  # Показываем первые 10
-                    text += f"━━━━━━━━━━━━━━━\n"
-                    text += measurement.get_info_text(detailed=False)
-                    text += "\n"
+                # Отправляем каждый замер отдельным сообщением с кнопками действий
+                for measurement in measurements[:20]:  # Показываем первые 20
+                    msg_text = measurement.get_info_text(detailed=True)
 
-            keyboard = get_main_menu_keyboard("measurer")
+                    keyboard = get_measurement_actions_keyboard(
+                        measurement.id,
+                        is_admin=False,
+                        current_status=measurement.status
+                    )
 
-            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+                    await callback.bot.send_message(
+                        callback.message.chat.id,
+                        msg_text,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+
             await callback.answer()
 
     except Exception as e:
@@ -365,14 +370,19 @@ async def handle_all_measurements_button(message: Message):
             await message.answer("✅ У вас нет замеров")
             return
 
-        text = f"📊 <b>Все ваши замеры ({len(measurements)}):</b>\n\n"
+        await message.answer(f"📊 <b>Все ваши замеры ({len(measurements)}):</b>", parse_mode="HTML")
 
+        # Отправляем каждый замер отдельным сообщением с кнопками действий
         for measurement in measurements[:20]:  # Показываем первые 20
-            text += f"━━━━━━━━━━━━━━━\n"
-            text += measurement.get_info_text(detailed=False)
-            text += "\n"
+            msg_text = measurement.get_info_text(detailed=True)
 
-        await message.answer(text, parse_mode="HTML")
+            keyboard = get_measurement_actions_keyboard(
+                measurement.id,
+                is_admin=False,
+                current_status=measurement.status
+            )
+
+            await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @measurer_router.message(F.text == "🔄 Мои замеры в работе")
@@ -399,16 +409,9 @@ async def handle_in_progress_measurements_button(message: Message):
             await message.answer("✅ Нет замеров в работе")
             return
 
-        text = f"🔄 <b>Замеры в работе ({len(measurements)}):</b>\n\n"
+        await message.answer(f"🔄 <b>Замеры в работе ({len(measurements)}):</b>", parse_mode="HTML")
 
-        for measurement in measurements:
-            text += f"━━━━━━━━━━━━━━━\n"
-            text += measurement.get_info_text(detailed=False)
-            text += "\n"
-
-        await message.answer(text, parse_mode="HTML")
-
-        # Отправляем каждый замер с кнопками действий
+        # Отправляем каждый замер отдельным сообщением с кнопками действий
         for measurement in measurements:
             msg_text = measurement.get_info_text(detailed=True)
 

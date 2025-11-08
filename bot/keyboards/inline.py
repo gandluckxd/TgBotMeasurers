@@ -49,13 +49,8 @@ def get_measurement_actions_keyboard(
     """
     builder = InlineKeyboardBuilder()
 
-    # Кнопки для замерщика
-    if current_status == MeasurementStatus.ASSIGNED:
-        builder.button(
-            text="🔄 Начать выполнение",
-            callback_data=f"status:{measurement_id}:in_progress"
-        )
-    elif current_status == MeasurementStatus.IN_PROGRESS:
+    # Кнопки для замерщика - только "Завершить" если замер в работе
+    if current_status == MeasurementStatus.IN_PROGRESS and not is_admin:
         builder.button(
             text="✅ Завершить",
             callback_data=f"status:{measurement_id}:completed"
