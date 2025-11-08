@@ -69,12 +69,6 @@ def get_measurement_actions_keyboard(
                 callback_data=f"status:{measurement_id}:cancelled"
             )
 
-    # Кнопка просмотра деталей
-    builder.button(
-        text="📋 Детали",
-        callback_data=f"details:{measurement_id}"
-    )
-
     # Размещаем кнопки в 2 колонки
     builder.adjust(2)
 

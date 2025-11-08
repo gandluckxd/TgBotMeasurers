@@ -206,46 +206,6 @@ async def handle_status_change(callback: CallbackQuery):
         await callback.answer("❌ Ошибка при изменении статуса", show_alert=True)
 
 
-@measurer_router.callback_query(F.data.startswith("details:"))
-async def handle_details(callback: CallbackQuery):
-    """Показать детальную информацию о замере"""
-    try:
-        measurement_id = int(callback.data.split(":")[1])
-
-        async for session in get_db():
-            user = await get_user_by_telegram_id(session, callback.from_user.id)
-
-            if not user:
-                await callback.answer("❌ Пользователь не найден", show_alert=True)
-                return
-
-            measurement = await get_measurement_by_id(session, measurement_id)
-
-            if not measurement:
-                await callback.answer("❌ Замер не найден", show_alert=True)
-                return
-
-            # Проверяем права доступа
-            if user.role == UserRole.MEASURER and measurement.measurer_id != user.id:
-                await callback.answer("⚠️ Это не ваш замер", show_alert=True)
-                return
-
-            text = measurement.get_info_text(detailed=True)
-
-            keyboard = get_measurement_actions_keyboard(
-                measurement.id,
-                is_admin=(user.role == UserRole.ADMIN),
-                current_status=measurement.status
-            )
-
-            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-            await callback.answer()
-
-    except Exception as e:
-        logger.error(f"Ошибка при показе деталей: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка при показе деталей", show_alert=True)
-
-
 @measurer_router.callback_query(F.data.startswith("my:"))
 async def handle_my_measurements(callback: CallbackQuery):
     """Обработка запросов моих замеров"""
