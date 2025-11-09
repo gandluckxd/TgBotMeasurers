@@ -545,6 +545,29 @@ async def handle_all_button(message: Message, has_admin_access: bool = False):
     await cmd_all(message, has_admin_access=has_admin_access)
 
 
+@admin_router.message(F.text == "🗺 Управление зонами")
+async def handle_zones_button(message: Message, has_admin_access: bool = False):
+    """Обработка нажатия кнопки Управление зонами"""
+    if not has_admin_access and not is_admin(message.from_user.id):
+        return
+
+    from bot.keyboards.inline import get_zones_menu_keyboard
+
+    text = (
+        "🗺 <b>Управление зонами доставки</b>\n\n"
+        "Здесь вы можете:\n"
+        "• Добавлять и удалять зоны доставки\n"
+        "• Назначать зоны замерщикам\n"
+        "• Просматривать текущие назначения\n\n"
+        "Выберите действие:"
+    )
+
+    await message.answer(
+        text,
+        reply_markup=get_zones_menu_keyboard()
+    )
+
+
 # ========================================
 # Управление пользователями
 # ========================================

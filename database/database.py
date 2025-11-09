@@ -240,7 +240,14 @@ async def create_measurement(
     delivery_zone: str | None = None,
     manager_id: int | None = None
 ) -> Measurement:
-    """Создать новый замер"""
+    """Создать новый замер с автоматическим распределением по зонам"""
+    from services.zone_service import ZoneService
+    from datetime import datetime
+
+    # Автоматически назначаем замерщика на основе зоны доставки
+    zone_service = ZoneService(session)
+    assigned_measurer = await zone_service.assign_measurer_by_zone(delivery_zone)
+
     measurement = Measurement(
         amocrm_lead_id=amocrm_lead_id,
         lead_name=lead_name,
@@ -250,12 +257,19 @@ async def create_measurement(
         address=address,
         delivery_zone=delivery_zone,
         manager_id=manager_id,
+        measurer_id=assigned_measurer.id if assigned_measurer else None,
+        assigned_at=datetime.now() if assigned_measurer else None,
         status=MeasurementStatus.ASSIGNED
     )
     session.add(measurement)
     await session.commit()
     await session.refresh(measurement)
-    logger.info(f"Создан новый замер: {measurement}")
+
+    if assigned_measurer:
+        logger.info(f"Создан новый замер: {measurement}, назначен замерщик: {assigned_measurer.full_name}")
+    else:
+        logger.warning(f"Создан новый замер: {measurement}, но не найден подходящий замерщик")
+
     return measurement
 
 

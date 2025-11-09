@@ -3,7 +3,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List
 
-from database.models import User, Measurement, MeasurementStatus
+from database.models import User, Measurement, MeasurementStatus, DeliveryZone
 
 
 def get_measurers_keyboard(measurers: List[User], measurement_id: int) -> InlineKeyboardMarkup:
@@ -134,6 +134,7 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
         builder.button(text="👤 Пользователи", callback_data="users_list")
         builder.button(text="📊 Все замеры", callback_data="list:all")
         builder.button(text="🔄 Замеры в работе", callback_data="list:assigned")
+        builder.button(text="🗺 Управление зонами", callback_data="manage_zones")
 
     elif role == "measurer":
         # У замерщика ТОЛЬКО 2 команды: Все замеры и Замеры в работе
@@ -568,6 +569,195 @@ def get_delete_invite_confirmation_keyboard(link_id: int) -> InlineKeyboardMarku
         InlineKeyboardButton(
             text="❌ Отмена",
             callback_data=f"invite_detail:{link_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+# ========== Клавиатуры для управления зонами доставки ==========
+
+def get_zones_menu_keyboard() -> InlineKeyboardMarkup:
+    """Создать меню управления зонами"""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="📋 Все зоны",
+            callback_data="view_all_zones"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить зону",
+            callback_data="add_zone"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="👷 Назначить зоны замерщикам",
+            callback_data="assign_zones_to_measurers"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="back_to_main_menu"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_zones_list_keyboard(zones: List[DeliveryZone]) -> InlineKeyboardMarkup:
+    """Создать клавиатуру со списком зон с возможностью быстрого удаления"""
+    builder = InlineKeyboardBuilder()
+
+    for zone in zones:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🗺 {zone.zone_name}",
+                callback_data=f"zone_detail:{zone.id}"
+            ),
+            InlineKeyboardButton(
+                text="🗑",
+                callback_data=f"confirm_delete_zone:{zone.id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить зону",
+            callback_data="add_zone"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="back_to_zones_menu"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_zone_detail_keyboard(zone_id: int) -> InlineKeyboardMarkup:
+    """Создать клавиатуру для детальной информации о зоне"""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑 Удалить зону",
+            callback_data=f"confirm_delete_zone:{zone_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 К списку зон",
+            callback_data="view_all_zones"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_delete_zone_confirmation_keyboard(zone_id: int) -> InlineKeyboardMarkup:
+    """Создать клавиатуру подтверждения удаления зоны"""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Да, удалить",
+            callback_data=f"delete_zone:{zone_id}"
+        ),
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data=f"zone_detail:{zone_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_measurers_for_zone_keyboard(measurers: List[User]) -> InlineKeyboardMarkup:
+    """Создать клавиатуру со списком замерщиков для назначения зон"""
+    builder = InlineKeyboardBuilder()
+
+    for measurer in measurers:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👷 {measurer.full_name}",
+                callback_data=f"measurer_zones:{measurer.id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="back_to_zones_menu"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_measurer_zones_keyboard(
+    measurer_id: int,
+    assigned_zones: List[DeliveryZone],
+    available_zones: List[DeliveryZone]
+) -> InlineKeyboardMarkup:
+    """Создать клавиатуру для управления зонами замерщика"""
+    builder = InlineKeyboardBuilder()
+
+    # Назначенные зоны с кнопкой удаления
+    if assigned_zones:
+        for zone in assigned_zones:
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"✅ {zone.zone_name}",
+                    callback_data=f"zone_info:{zone.id}"
+                ),
+                InlineKeyboardButton(
+                    text="🗑",
+                    callback_data=f"remove_zone_from_measurer:{measurer_id}:{zone.id}"
+                )
+            )
+
+    # Доступные зоны для назначения
+    if available_zones:
+        builder.row(
+            InlineKeyboardButton(
+                text="➕ Добавить зону",
+                callback_data=f"show_available_zones:{measurer_id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="assign_zones_to_measurers"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_zones_for_measurer_keyboard(measurer_id: int, zones: List[DeliveryZone]) -> InlineKeyboardMarkup:
+    """Создать клавиатуру с доступными зонами для назначения замерщику"""
+    builder = InlineKeyboardBuilder()
+
+    for zone in zones:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"➕ {zone.zone_name}",
+                callback_data=f"add_zone_to_measurer:{measurer_id}:{zone.id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data=f"measurer_zones:{measurer_id}"
         )
     )
 

@@ -17,6 +17,7 @@ def get_admin_commands_keyboard() -> ReplyKeyboardMarkup:
     builder.row(KeyboardButton(text="👤 Пользователи"))
     builder.row(KeyboardButton(text="📊 Все замеры"))
     builder.row(KeyboardButton(text="🔄 Замеры в работе"))
+    builder.row(KeyboardButton(text="🗺 Управление зонами"))
 
     return builder.as_markup(resize_keyboard=True)
 

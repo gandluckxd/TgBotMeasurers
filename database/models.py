@@ -4,7 +4,7 @@ from typing import Optional
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
-    BigInteger, String, DateTime, Enum, ForeignKey, Text, Integer
+    BigInteger, String, DateTime, Enum, ForeignKey, Text, Integer, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -60,6 +60,11 @@ class User(Base):
         "Measurement",
         foreign_keys="Measurement.manager_id",
         back_populates="manager"
+    )
+    assigned_zones: Mapped[list["MeasurerZone"]] = relationship(
+        "MeasurerZone",
+        back_populates="user",
+        cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -281,3 +286,58 @@ class InviteLink(Base):
         text += f"🔑 <b>Токен:</b> <code>{self.token}</code>\n"
 
         return text
+
+
+class DeliveryZone(Base):
+    """Модель зоны доставки"""
+    __tablename__ = 'delivery_zones'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Связь с замерщиками через промежуточную таблицу
+    measurer_assignments: Mapped[list["MeasurerZone"]] = relationship(
+        'MeasurerZone',
+        back_populates='zone',
+        cascade='all, delete-orphan'
+    )
+
+    def __repr__(self) -> str:
+        return f"<DeliveryZone(id={self.id}, zone_name='{self.zone_name}')>"
+
+
+class MeasurerZone(Base):
+    """Модель привязки зоны к замерщику"""
+    __tablename__ = 'measurer_zones'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'zone_id', name='unique_user_zone'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    zone_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("delivery_zones.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Связи
+    zone: Mapped["DeliveryZone"] = relationship('DeliveryZone', back_populates='measurer_assignments')
+    user: Mapped["User"] = relationship('User', back_populates='assigned_zones')
+
+    def __repr__(self) -> str:
+        return f"<MeasurerZone(user_id={self.user_id}, zone_id={self.zone_id})>"
+
+
+class RoundRobinCounter(Base):
+    """Модель счетчика для round-robin распределения"""
+    __tablename__ = 'round_robin_counter'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_assigned_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    last_assigned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<RoundRobinCounter(last_assigned_user_id={self.last_assigned_user_id})>"

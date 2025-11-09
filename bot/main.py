@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 
 from config import settings
 from database import db
-from bot.handlers import registration_router, invite_links_router, admin_router, measurer_router, manager_router
+from bot.handlers import registration_router, invite_links_router, admin_router, measurer_router, manager_router, zones_router
 from bot.middlewares import RoleCheckMiddleware
 
 
@@ -138,6 +138,7 @@ async def main():
     # Регистрируем роутеры (registration_router должен быть первым для обработки /start)
     dp.include_router(registration_router)
     dp.include_router(invite_links_router)
+    dp.include_router(zones_router)
     dp.include_router(admin_router)
     dp.include_router(measurer_router)
     dp.include_router(manager_router)
