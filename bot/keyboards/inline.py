@@ -69,8 +69,14 @@ def get_measurement_actions_keyboard(
                 callback_data=f"status:{measurement_id}:cancelled"
             )
 
-    # Размещаем кнопки в 2 колонки
-    builder.adjust(2)
+        # Кнопка возврата в главное меню для администратора
+        builder.button(
+            text="📋 В главное меню",
+            callback_data="admin_menu"
+        )
+
+    # Размещаем кнопки по одной в строке
+    builder.adjust(1)
 
     return builder.as_markup()
 

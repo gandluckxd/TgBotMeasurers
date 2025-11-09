@@ -847,3 +847,37 @@ async def handle_measurers_list(callback: CallbackQuery, has_admin_access: bool 
         await callback.answer("❌ Ошибка при получении списка", show_alert=True)
 
 
+@admin_router.callback_query(F.data == "admin_menu")
+async def handle_admin_menu(callback: CallbackQuery, has_admin_access: bool = False, user_role: UserRole = None):
+    """Обработчик кнопки 'В главное меню'"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        # Удаляем текущее сообщение с замером
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass  # Игнорируем ошибки удаления
+
+        # Определяем роль для клавиатуры
+        role_for_keyboard = "supervisor" if user_role == UserRole.SUPERVISOR else "admin"
+        keyboard = get_main_menu_keyboard(role_for_keyboard)
+
+        menu_title = "Главное меню руководителя" if user_role == UserRole.SUPERVISOR else "Главное меню администратора"
+
+        # Отправляем новое сообщение с главным меню
+        await callback.bot.send_message(
+            callback.message.chat.id,
+            f"📋 <b>{menu_title}:</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при возврате в главное меню: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
