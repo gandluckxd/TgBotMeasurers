@@ -555,3 +555,61 @@ async def delete_invite_link(
 
     logger.info(f"Удалена пригласительная ссылка {token_preview}...")
     return True
+
+
+# ============================================================================
+# Функции для работы с привязкой AmoCRM аккаунтов
+# ============================================================================
+
+async def update_user_amocrm_id(
+    session: AsyncSession,
+    user_id: int,
+    amocrm_user_id: int | None
+) -> User | None:
+    """
+    Обновить AmoCRM ID пользователя
+
+    Args:
+        session: Сессия БД
+        user_id: ID пользователя в боте
+        amocrm_user_id: ID пользователя в AmoCRM (None для отвязки)
+
+    Returns:
+        Обновленный пользователь или None
+    """
+    user = await get_user_by_id(session, user_id)
+
+    if not user:
+        logger.warning(f"Пользователь с ID {user_id} не найден")
+        return None
+
+    user.amocrm_user_id = amocrm_user_id
+    await session.commit()
+    await session.refresh(user)
+
+    if amocrm_user_id:
+        logger.info(f"Пользователь {user.telegram_id} привязан к AmoCRM аккаунту {amocrm_user_id}")
+    else:
+        logger.info(f"Пользователь {user.telegram_id} отвязан от AmoCRM аккаунта")
+
+    return user
+
+
+async def get_user_by_amocrm_id(
+    session: AsyncSession,
+    amocrm_user_id: int
+) -> User | None:
+    """
+    Получить пользователя по AmoCRM ID
+
+    Args:
+        session: Сессия БД
+        amocrm_user_id: ID пользователя в AmoCRM
+
+    Returns:
+        Пользователь или None
+    """
+    result = await session.execute(
+        select(User).where(User.amocrm_user_id == amocrm_user_id)
+    )
+    return result.scalar_one_or_none()

@@ -16,6 +16,7 @@ from database import (
     get_user_by_id,
     update_user_role,
     toggle_user_active,
+    update_user_amocrm_id,
     MeasurementStatus,
     UserRole
 )
@@ -25,7 +26,9 @@ from bot.keyboards.inline import (
     get_measurement_actions_keyboard,
     get_users_list_keyboard,
     get_user_detail_keyboard,
-    get_role_selection_keyboard
+    get_role_selection_keyboard,
+    get_amocrm_account_keyboard,
+    get_amocrm_users_keyboard
 )
 from bot.keyboards.reply import (
     get_admin_commands_keyboard,
@@ -678,6 +681,13 @@ async def handle_user_detail(callback: CallbackQuery, has_admin_access: bool = F
 
             text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n"
             text += f"<b>Статус:</b> {'✅ Активен' if user.is_active else '⛔ Неактивен'}\n"
+
+            # Информация об AmoCRM аккаунте
+            if user.amocrm_user_id:
+                text += f"<b>AmoCRM:</b> ✅ Привязан (ID: {user.amocrm_user_id})\n"
+            else:
+                text += f"<b>AmoCRM:</b> ⚠️ Не привязан\n"
+
             text += f"<b>Создан:</b> {user.created_at.strftime('%d.%m.%Y %H:%M')}\n"
 
             keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
@@ -902,5 +912,219 @@ async def handle_admin_menu(callback: CallbackQuery, has_admin_access: bool = Fa
     except Exception as e:
         logger.error(f"Ошибка при возврате в главное меню: {e}", exc_info=True)
         await callback.answer("❌ Ошибка", show_alert=True)
+
+
+# ========================================
+# Управление AmoCRM аккаунтами
+# ========================================
+
+@admin_router.callback_query(F.data.startswith("user_amocrm:"))
+async def handle_user_amocrm(callback: CallbackQuery, has_admin_access: bool = False):
+    """Показать меню управления AmoCRM аккаунтом пользователя"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        user_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            user = await get_user_by_id(session, user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            text = f"🔗 <b>Управление AmoCRM аккаунтом</b>\n\n"
+            text += f"<b>Пользователь:</b> {user.full_name}\n\n"
+
+            if user.amocrm_user_id:
+                text += f"<b>Статус:</b> ✅ Аккаунт привязан\n"
+                text += f"<b>AmoCRM ID:</b> {user.amocrm_user_id}\n"
+            else:
+                text += f"<b>Статус:</b> ⚠️ Аккаунт не привязан\n"
+
+            keyboard = get_amocrm_account_keyboard(user.id, user.amocrm_user_id is not None)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при отображении меню AmoCRM: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_amocrm_select:"))
+async def handle_user_amocrm_select(callback: CallbackQuery, has_admin_access: bool = False):
+    """Показать список пользователей AmoCRM для привязки"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        user_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            user = await get_user_by_id(session, user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            # Получаем список пользователей AmoCRM через API
+            from services.amocrm import amocrm_client
+
+            await callback.answer("⏳ Загружаю пользователей AmoCRM...", show_alert=False)
+
+            amocrm_users = await amocrm_client.get_all_users()
+
+            if not amocrm_users:
+                await callback.answer(
+                    "❌ Не удалось получить список пользователей AmoCRM",
+                    show_alert=True
+                )
+                return
+
+            text = f"👥 <b>Выберите пользователя AmoCRM</b>\n\n"
+            text += f"<b>Привязка для:</b> {user.full_name}\n\n"
+            text += f"Найдено пользователей: {len(amocrm_users)}"
+
+            keyboard = get_amocrm_users_keyboard(user.id, amocrm_users, page=0)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке пользователей AmoCRM: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка загрузки пользователей", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_amocrm_page:"))
+async def handle_user_amocrm_page(callback: CallbackQuery, has_admin_access: bool = False):
+    """Переключение страницы списка пользователей AmoCRM"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        parts = callback.data.split(":")
+        user_id = int(parts[1])
+        page = int(parts[2])
+
+        async for session in get_db():
+            user = await get_user_by_id(session, user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            # Получаем список пользователей AmoCRM
+            from services.amocrm import amocrm_client
+            amocrm_users = await amocrm_client.get_all_users()
+
+            if not amocrm_users:
+                await callback.answer("❌ Не удалось получить список", show_alert=True)
+                return
+
+            text = f"👥 <b>Выберите пользователя AmoCRM</b>\n\n"
+            text += f"<b>Привязка для:</b> {user.full_name}\n\n"
+            text += f"Найдено пользователей: {len(amocrm_users)}"
+
+            keyboard = get_amocrm_users_keyboard(user.id, amocrm_users, page=page)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при переключении страницы: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_amocrm_link:"))
+async def handle_user_amocrm_link(callback: CallbackQuery, has_admin_access: bool = False):
+    """Привязать пользователя к аккаунту AmoCRM"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        parts = callback.data.split(":")
+        user_id = int(parts[1])
+        amocrm_user_id = int(parts[2])
+
+        async for session in get_db():
+            # Обновляем AmoCRM ID пользователя
+            user = await update_user_amocrm_id(session, user_id, amocrm_user_id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            # Получаем информацию о пользователе AmoCRM для отображения
+            from services.amocrm import amocrm_client
+            amocrm_user_info = await amocrm_client.get_user(amocrm_user_id)
+
+            amocrm_user_name = "Неизвестный"
+            if amocrm_user_info:
+                amocrm_user_name = amocrm_user_info.get("name", "Неизвестный")
+
+            await callback.answer(
+                f"✅ Аккаунт привязан к {amocrm_user_name}",
+                show_alert=True
+            )
+
+            # Возвращаемся к меню управления аккаунтом
+            text = f"🔗 <b>Управление AmoCRM аккаунтом</b>\n\n"
+            text += f"<b>Пользователь:</b> {user.full_name}\n\n"
+            text += f"<b>Статус:</b> ✅ Аккаунт привязан\n"
+            text += f"<b>AmoCRM ID:</b> {user.amocrm_user_id}\n"
+            text += f"<b>AmoCRM имя:</b> {amocrm_user_name}\n"
+
+            keyboard = get_amocrm_account_keyboard(user.id, True)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+            logger.info(
+                f"Пользователь {user.telegram_id} привязан к AmoCRM аккаунту {amocrm_user_id} ({amocrm_user_name})"
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка при привязке аккаунта: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при привязке аккаунта", show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("user_amocrm_unlink:"))
+async def handle_user_amocrm_unlink(callback: CallbackQuery, has_admin_access: bool = False):
+    """Отвязать пользователя от аккаунта AmoCRM"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        user_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            # Отвязываем аккаунт (устанавливаем None)
+            user = await update_user_amocrm_id(session, user_id, None)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            await callback.answer("✅ Аккаунт отвязан", show_alert=True)
+
+            # Возвращаемся к меню управления аккаунтом
+            text = f"🔗 <b>Управление AmoCRM аккаунтом</b>\n\n"
+            text += f"<b>Пользователь:</b> {user.full_name}\n\n"
+            text += f"<b>Статус:</b> ⚠️ Аккаунт не привязан\n"
+
+            keyboard = get_amocrm_account_keyboard(user.id, False)
+
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+            logger.info(f"Пользователь {user.telegram_id} отвязан от AmoCRM аккаунта")
+
+    except Exception as e:
+        logger.error(f"Ошибка при отвязке аккаунта: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при отвязке аккаунта", show_alert=True)
 
 

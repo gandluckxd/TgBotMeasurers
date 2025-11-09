@@ -222,6 +222,23 @@ class AmoCRMClient:
             "responsible_user": responsible_user
         }
 
+    async def get_all_users(self) -> list[Dict[str, Any]]:
+        """
+        Получить список всех пользователей AmoCRM
+
+        Returns:
+            Список пользователей
+        """
+        result = await self._make_request(
+            method="GET",
+            endpoint="users"
+        )
+
+        if result and "_embedded" in result:
+            return result["_embedded"].get("users", [])
+
+        return []
+
 
 # Глобальный экземпляр клиента
 amocrm_client = AmoCRMClient()

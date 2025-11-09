@@ -284,6 +284,12 @@ def get_user_detail_keyboard(user_id: int, current_role: str, is_active: bool) -
         callback_data=f"user_change_role:{user_id}"
     )
 
+    # Кнопка управления AmoCRM аккаунтом
+    builder.button(
+        text="🔗 Аккаунт AmoCRM",
+        callback_data=f"user_amocrm:{user_id}"
+    )
+
     # Кнопка активации/деактивации
     if is_active:
         builder.button(
@@ -758,6 +764,109 @@ def get_zones_for_measurer_keyboard(measurer_id: int, zones: List[DeliveryZone])
         InlineKeyboardButton(
             text="🔙 Назад",
             callback_data=f"measurer_zones:{measurer_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+# ========== Клавиатуры для управления AmoCRM аккаунтами ==========
+
+def get_amocrm_account_keyboard(user_id: int, has_amocrm_id: bool) -> InlineKeyboardMarkup:
+    """
+    Создать клавиатуру для управления AmoCRM аккаунтом пользователя
+
+    Args:
+        user_id: ID пользователя
+        has_amocrm_id: Привязан ли аккаунт AmoCRM
+
+    Returns:
+        Inline клавиатура
+    """
+    builder = InlineKeyboardBuilder()
+
+    if has_amocrm_id:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔄 Изменить аккаунт",
+                callback_data=f"user_amocrm_select:{user_id}"
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🗑 Отвязать аккаунт",
+                callback_data=f"user_amocrm_unlink:{user_id}"
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="➕ Привязать аккаунт",
+                callback_data=f"user_amocrm_select:{user_id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="◀️ Назад",
+            callback_data=f"user_detail:{user_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_amocrm_users_keyboard(user_id: int, amocrm_users: List[dict], page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """
+    Создать клавиатуру со списком пользователей AmoCRM
+
+    Args:
+        user_id: ID пользователя бота
+        amocrm_users: Список пользователей AmoCRM
+        page: Номер страницы
+        per_page: Количество пользователей на странице
+
+    Returns:
+        Inline клавиатура
+    """
+    builder = InlineKeyboardBuilder()
+
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    page_users = amocrm_users[start_idx:end_idx]
+
+    for amocrm_user in page_users:
+        amocrm_user_id = amocrm_user.get("id")
+        name = amocrm_user.get("name", "Без имени")
+
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👤 {name}",
+                callback_data=f"user_amocrm_link:{user_id}:{amocrm_user_id}"
+            )
+        )
+
+    # Кнопки навигации
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(
+            text="◀️ Назад",
+            callback_data=f"user_amocrm_page:{user_id}:{page-1}"
+        ))
+    if end_idx < len(amocrm_users):
+        nav_buttons.append(InlineKeyboardButton(
+            text="Вперед ▶️",
+            callback_data=f"user_amocrm_page:{user_id}:{page+1}"
+        ))
+
+    if nav_buttons:
+        builder.row(*nav_buttons)
+
+    # Кнопка отмены
+    builder.row(
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data=f"user_amocrm:{user_id}"
         )
     )
 

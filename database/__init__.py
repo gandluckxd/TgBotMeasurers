@@ -20,6 +20,8 @@ from database.database import (
     update_user_role,
     toggle_user_active,
     create_user_by_telegram_id,
+    update_user_amocrm_id,
+    get_user_by_amocrm_id,
     get_measurement_by_id,
     get_measurement_by_amocrm_id,
     get_measurements_by_status,
@@ -56,6 +58,8 @@ __all__ = [
     "update_user_role",
     "toggle_user_active",
     "create_user_by_telegram_id",
+    "update_user_amocrm_id",
+    "get_user_by_amocrm_id",
     # Measurement functions
     "get_measurement_by_id",
     "get_measurement_by_amocrm_id",
