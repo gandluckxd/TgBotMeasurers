@@ -232,19 +232,23 @@ async def get_measurements_by_manager(
 async def create_measurement(
     session: AsyncSession,
     amocrm_lead_id: int,
-    client_name: str,
-    address: str,
-    client_phone: str | None = None,
-    description: str | None = None,
+    lead_name: str,
+    responsible_user_name: str | None = None,
+    contact_name: str | None = None,
+    contact_phone: str | None = None,
+    address: str | None = None,
+    delivery_zone: str | None = None,
     manager_id: int | None = None
 ) -> Measurement:
     """Создать новый замер"""
     measurement = Measurement(
         amocrm_lead_id=amocrm_lead_id,
-        client_name=client_name,
-        client_phone=client_phone,
+        lead_name=lead_name,
+        responsible_user_name=responsible_user_name,
+        contact_name=contact_name,
+        contact_phone=contact_phone,
         address=address,
-        description=description,
+        delivery_zone=delivery_zone,
         manager_id=manager_id,
         status=MeasurementStatus.ASSIGNED
     )

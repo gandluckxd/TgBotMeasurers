@@ -84,9 +84,16 @@ class Measurement(Base):
 
     # Данные из AmoCRM
     amocrm_lead_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
-    client_name: Mapped[str] = mapped_column(String(500), nullable=False)
-    client_phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    address: Mapped[str] = mapped_column(Text, nullable=False)
+    lead_name: Mapped[str] = mapped_column(String(500), nullable=False)  # Наименование сделки
+    responsible_user_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Ответственный
+
+    # Контактная информация
+    contact_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Имя контакта
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Телефон контакта
+
+    # Адресная информация
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Адрес (ID: 809475)
+    delivery_zone: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Зона доставки (ID: 808753)
 
     # Дополнительная информация
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -144,27 +151,37 @@ class Measurement(Base):
     def get_info_text(self, detailed: bool = True) -> str:
         """Форматированная информация о замере"""
         text = f"📋 <b>Замер #{self.id}</b>\n\n"
-        text += f"👤 <b>Клиент:</b> {self.client_name}\n"
 
-        if self.client_phone:
-            text += f"📞 <b>Телефон:</b> {self.client_phone}\n"
+        # Наименование сделки
+        text += f"📄 <b>Сделка:</b> {self.lead_name}\n"
 
-        text += f"📍 <b>Адрес:</b> {self.address}\n"
-        text += f"📊 <b>Статус:</b> {self.status_text}\n"
+        # Ответственный
+        if self.responsible_user_name:
+            text += f"👤 <b>Ответственный:</b> {self.responsible_user_name}\n"
 
+        # Адрес
+        if self.address:
+            text += f"📍 <b>Адрес:</b> {self.address}\n"
+
+        # Зона доставки
+        if self.delivery_zone:
+            text += f"🚚 <b>Зона доставки:</b> {self.delivery_zone}\n"
+
+        # Имя контакта
+        if self.contact_name:
+            text += f"👨‍💼 <b>Контакт:</b> {self.contact_name}\n"
+
+        # Телефон контакта
+        if self.contact_phone:
+            text += f"📞 <b>Телефон:</b> {self.contact_phone}\n"
+
+        text += f"\n📊 <b>Статус:</b> {self.status_text}\n"
+
+        # Замерщик
         if self.measurer:
             text += f"👷 <b>Замерщик:</b> {self.measurer.full_name}\n"
 
         if detailed:
-            if self.manager:
-                text += f"👔 <b>Менеджер:</b> {self.manager.full_name}\n"
-
-            if self.description:
-                text += f"\n📝 <b>Описание:</b>\n{self.description}\n"
-
-            if self.notes:
-                text += f"\n💬 <b>Заметки:</b>\n{self.notes}\n"
-
             text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {self.amocrm_lead_id}\n"
             text += f"📅 <b>Создано:</b> {self.created_at.strftime('%d.%m.%Y %H:%M')}\n"
 

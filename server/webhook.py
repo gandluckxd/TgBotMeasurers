@@ -175,40 +175,45 @@ class WebhookProcessor:
             responsible_user = full_info.get("responsible_user")
 
             # Извлекаем данные из сделки
-            client_name = lead.get("name", "Неизвестный клиент")
+            lead_name = lead.get("name", "Неизвестная сделка")
 
-            # Извлекаем телефон и адрес из контактов или кастомных полей
-            phone = None
-            address = None
+            # Получаем имя ответственного пользователя
+            responsible_user_name = None
+            if responsible_user:
+                responsible_user_name = responsible_user.get("name")
 
-            # Пробуем получить из контактов
+            # Извлекаем данные контакта
+            contact_name = None
+            contact_phone = None
+
             if contacts:
                 first_contact = contacts[0]
-                custom_fields = first_contact.get("custom_fields_values", [])
+                contact_name = first_contact.get("name")
 
+                custom_fields = first_contact.get("custom_fields_values", [])
                 for field in custom_fields:
                     field_code = field.get("field_code")
+                    field_id = field.get("field_id")
                     values = field.get("values", [])
 
                     if field_code == "PHONE" and values:
-                        phone = values[0].get("value")
-                    elif field_code == "EMAIL" and values and not phone:
-                        # Если нет телефона, хотя бы сохраним email
-                        phone = values[0].get("value")
+                        contact_phone = values[0].get("value")
+                        break
 
-            # Пробуем получить адрес из кастомных полей сделки
+            # Получаем кастомные поля сделки по ID
             lead_custom_fields = lead.get("custom_fields_values", [])
+
+            address = None  # Поле с ID 809475
+            delivery_zone = None  # Поле с ID 808753
+
             for field in lead_custom_fields:
-                field_code = field.get("field_code")
+                field_id = field.get("field_id")
                 values = field.get("values", [])
 
-                if field_code in ["ADDRESS", "ADRES", "address"] and values:
+                if field_id == 809475 and values:  # Адрес
                     address = values[0].get("value")
-
-            if not address:
-                address = "Адрес не указан"
-
-            responsible_user_id = lead.get("responsible_user_id")
+                elif field_id == 808753 and values:  # Зона доставки
+                    delivery_zone = values[0].get("value")
 
             # Создаем замер в БД
             async for session in get_db():
@@ -222,11 +227,12 @@ class WebhookProcessor:
                 measurement = await create_measurement(
                     session=session,
                     amocrm_lead_id=lead_id,
-                    client_name=client_name,
+                    lead_name=lead_name,
+                    responsible_user_name=responsible_user_name,
+                    contact_name=contact_name,
+                    contact_phone=contact_phone,
                     address=address,
-                    client_phone=phone,
-                    description=f"Сделка: {client_name}",
-                    manager_id=None  # TODO: связать с менеджером из AmoCRM
+                    delivery_zone=delivery_zone
                 )
 
                 logger.info(f"Создан замер #{measurement.id} для сделки {lead_id}")
