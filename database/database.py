@@ -139,16 +139,24 @@ async def get_all_measurers(session: AsyncSession) -> list[User]:
 
 async def get_measurement_by_id(session: AsyncSession, measurement_id: int) -> Measurement | None:
     """Получить замер по ID"""
+    from sqlalchemy.orm import joinedload
+
     result = await session.execute(
-        select(Measurement).where(Measurement.id == measurement_id)
+        select(Measurement)
+        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .where(Measurement.id == measurement_id)
     )
     return result.scalar_one_or_none()
 
 
 async def get_measurement_by_amocrm_id(session: AsyncSession, amocrm_lead_id: int) -> Measurement | None:
     """Получить замер по ID сделки в AmoCRM"""
+    from sqlalchemy.orm import joinedload
+
     result = await session.execute(
-        select(Measurement).where(Measurement.amocrm_lead_id == amocrm_lead_id)
+        select(Measurement)
+        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .where(Measurement.amocrm_lead_id == amocrm_lead_id)
     )
     return result.scalar_one_or_none()
 
@@ -159,13 +167,20 @@ async def get_measurements_by_status(
     limit: int | None = None
 ) -> list[Measurement]:
     """Получить замеры по статусу"""
-    query = select(Measurement).where(Measurement.status == status).order_by(Measurement.created_at.desc())
+    from sqlalchemy.orm import joinedload
+
+    query = (
+        select(Measurement)
+        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .where(Measurement.status == status)
+        .order_by(Measurement.created_at.desc())
+    )
 
     if limit:
         query = query.limit(limit)
 
     result = await session.execute(query)
-    return list(result.scalars().all())
+    return list(result.scalars().unique().all())
 
 
 async def get_measurements_by_measurer(
@@ -174,7 +189,13 @@ async def get_measurements_by_measurer(
     status: MeasurementStatus | None = None
 ) -> list[Measurement]:
     """Получить замеры по замерщику"""
-    query = select(Measurement).where(Measurement.measurer_id == measurer_id)
+    from sqlalchemy.orm import joinedload
+
+    query = (
+        select(Measurement)
+        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .where(Measurement.measurer_id == measurer_id)
+    )
 
     if status:
         query = query.where(Measurement.status == status)
@@ -182,7 +203,7 @@ async def get_measurements_by_measurer(
     query = query.order_by(Measurement.created_at.desc())
 
     result = await session.execute(query)
-    return list(result.scalars().all())
+    return list(result.scalars().unique().all())
 
 
 async def get_measurements_by_manager(
@@ -191,7 +212,13 @@ async def get_measurements_by_manager(
     status: MeasurementStatus | None = None
 ) -> list[Measurement]:
     """Получить замеры по менеджеру"""
-    query = select(Measurement).where(Measurement.manager_id == manager_id)
+    from sqlalchemy.orm import joinedload
+
+    query = (
+        select(Measurement)
+        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .where(Measurement.manager_id == manager_id)
+    )
 
     if status:
         query = query.where(Measurement.status == status)
@@ -199,7 +226,7 @@ async def get_measurements_by_manager(
     query = query.order_by(Measurement.created_at.desc())
 
     result = await session.execute(query)
-    return list(result.scalars().all())
+    return list(result.scalars().unique().all())
 
 
 async def create_measurement(
@@ -219,7 +246,7 @@ async def create_measurement(
         address=address,
         description=description,
         manager_id=manager_id,
-        status=MeasurementStatus.PENDING
+        status=MeasurementStatus.ASSIGNED
     )
     session.add(measurement)
     await session.commit()

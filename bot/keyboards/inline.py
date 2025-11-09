@@ -34,7 +34,7 @@ def get_measurers_keyboard(measurers: List[User], measurement_id: int) -> Inline
 def get_measurement_actions_keyboard(
     measurement_id: int,
     is_admin: bool = False,
-    current_status: MeasurementStatus = MeasurementStatus.PENDING
+    current_status: MeasurementStatus = MeasurementStatus.ASSIGNED
 ) -> InlineKeyboardMarkup:
     """
     Создать клавиатуру с действиями для замера
@@ -49,8 +49,8 @@ def get_measurement_actions_keyboard(
     """
     builder = InlineKeyboardBuilder()
 
-    # Кнопки для замерщика - только "Завершить" если замер в работе
-    if current_status == MeasurementStatus.IN_PROGRESS and not is_admin:
+    # Кнопки для замерщика - только "Завершить" если замер назначен
+    if current_status == MeasurementStatus.ASSIGNED and not is_admin:
         builder.button(
             text="✅ Завершить",
             callback_data=f"status:{measurement_id}:completed"

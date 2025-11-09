@@ -118,25 +118,11 @@ async def handle_manager_measurements(callback: CallbackQuery):
                 title = "📊 Все заказы"
 
             elif filter_type == "in_progress":
-                # ЗАМЕРЫ В РАБОТЕ (pending + assigned + in_progress)
-                pending_measurements = await get_measurements_by_manager(
-                    session, user.id, MeasurementStatus.PENDING
-                )
-                assigned_measurements = await get_measurements_by_manager(
+                # ЗАМЕРЫ В РАБОТЕ (только ASSIGNED)
+                measurements = await get_measurements_by_manager(
                     session, user.id, MeasurementStatus.ASSIGNED
                 )
-                in_progress_measurements = await get_measurements_by_manager(
-                    session, user.id, MeasurementStatus.IN_PROGRESS
-                )
-                # Объединяем списки
-                measurements = list(pending_measurements) + list(assigned_measurements) + list(in_progress_measurements)
                 title = "🔄 Замеры в работе"
-
-            elif filter_type == "pending":
-                measurements = await get_measurements_by_manager(
-                    session, user.id, MeasurementStatus.PENDING
-                )
-                title = "⏳ Ожидают назначения"
 
             elif filter_type == "completed":
                 measurements = await get_measurements_by_manager(
@@ -208,18 +194,10 @@ async def handle_in_progress_measurements_button(message: Message):
             return
 
         # Получаем замеры в работе (pending + assigned + in_progress)
-        pending_measurements = await get_measurements_by_manager(
-            session, user.id, MeasurementStatus.PENDING
-        )
-        assigned_measurements = await get_measurements_by_manager(
+        # Получаем замеры в работе (только ASSIGNED)
+        measurements = await get_measurements_by_manager(
             session, user.id, MeasurementStatus.ASSIGNED
         )
-        in_progress_measurements = await get_measurements_by_manager(
-            session, user.id, MeasurementStatus.IN_PROGRESS
-        )
-
-        # Объединяем списки
-        measurements = list(pending_measurements) + list(assigned_measurements) + list(in_progress_measurements)
 
         if not measurements:
             await message.answer("✅ Нет замеров в работе")

@@ -25,9 +25,7 @@ class UserRole(PyEnum):
 
 class MeasurementStatus(PyEnum):
     """Статусы замеров"""
-    PENDING = "pending"  # Ожидает назначения замерщика
-    ASSIGNED = "assigned"  # Назначен замерщик
-    IN_PROGRESS = "in_progress"  # В процессе выполнения
+    ASSIGNED = "assigned"  # Назначен замерщику (по умолчанию при назначении)
     COMPLETED = "completed"  # Выполнен
     CANCELLED = "cancelled"  # Отменен
 
@@ -97,7 +95,7 @@ class Measurement(Base):
     # Статус и назначение
     status: Mapped[MeasurementStatus] = mapped_column(
         Enum(MeasurementStatus),
-        default=MeasurementStatus.PENDING,
+        default=MeasurementStatus.ASSIGNED,
         nullable=False,
         index=True
     )
@@ -137,9 +135,7 @@ class Measurement(Base):
     def status_text(self) -> str:
         """Текстовое представление статуса на русском"""
         status_map = {
-            MeasurementStatus.PENDING: "⏳ Ожидает назначения",
-            MeasurementStatus.ASSIGNED: "📋 Назначен",
-            MeasurementStatus.IN_PROGRESS: "🔄 В процессе",
+            MeasurementStatus.ASSIGNED: "📋 В работе",
             MeasurementStatus.COMPLETED: "✅ Выполнен",
             MeasurementStatus.CANCELLED: "❌ Отменен",
         }

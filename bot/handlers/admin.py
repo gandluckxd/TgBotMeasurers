@@ -159,19 +159,19 @@ async def cmd_measurers(message: Message, has_admin_access: bool = False):
 
 @admin_router.message(Command("pending"))
 async def cmd_pending(message: Message, has_admin_access: bool = False):
-    """Показать новые замеры, ожидающие назначения"""
+    """Показать замеры в работе"""
     if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
     async for session in get_db():
-        measurements = await get_measurements_by_status(session, MeasurementStatus.PENDING)
+        measurements = await get_measurements_by_status(session, MeasurementStatus.ASSIGNED)
 
         if not measurements:
-            await message.answer("✅ Нет новых замеров, ожидающих назначения")
+            await message.answer("✅ Нет замеров в работе")
             return
 
-        await message.answer(f"📋 <b>Новые замеры ({len(measurements)}):</b>", parse_mode="HTML")
+        await message.answer(f"📋 <b>Замеры в работе ({len(measurements)}):</b>", parse_mode="HTML")
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
@@ -195,12 +195,16 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
 
     async for session in get_db():
         from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
         from database.models import Measurement
 
         result = await session.execute(
-            select(Measurement).order_by(Measurement.created_at.desc()).limit(20)
+            select(Measurement)
+            .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+            .order_by(Measurement.created_at.desc())
+            .limit(20)
         )
-        measurements = list(result.scalars().all())
+        measurements = list(result.scalars().unique().all())
 
         if not measurements:
             await message.answer("❌ Нет замеров")
@@ -350,9 +354,9 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
             # Сохраняем старого замерщика для уведомления
             old_measurer = measurement.measurer
 
-            # Назначаем замерщика и сразу ставим статус "В работе"
+            # Назначаем замерщика и ставим статус "Назначен"
             measurement.measurer_id = measurer.id
-            measurement.status = MeasurementStatus.IN_PROGRESS
+            measurement.status = MeasurementStatus.ASSIGNED
             measurement.assigned_at = datetime.now()
 
             await session.commit()
@@ -450,23 +454,26 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
         async for session in get_db():
             if list_type == "all":
                 from sqlalchemy import select
+                from sqlalchemy.orm import joinedload
                 from database.models import Measurement
 
                 result = await session.execute(
-                    select(Measurement).order_by(Measurement.created_at.desc()).limit(20)
+                    select(Measurement)
+                    .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+                    .order_by(Measurement.created_at.desc())
+                    .limit(20)
                 )
-                measurements = list(result.scalars().all())
+                measurements = list(result.scalars().unique().all())
                 title = "📊 Все замеры (последние 20)"
 
-            elif list_type in ["pending", "assigned", "in_progress", "completed"]:
+            elif list_type in ["assigned", "completed", "cancelled"]:
                 status = MeasurementStatus(list_type)
                 measurements = await get_measurements_by_status(session, status)
 
                 status_titles = {
-                    "pending": "📋 Новые замеры",
-                    "assigned": "📋 Назначенные замеры",
-                    "in_progress": "🔄 Замеры в процессе",
-                    "completed": "✅ Выполненные замеры"
+                    "assigned": "📋 Замеры в работе",
+                    "completed": "✅ Выполненные замеры",
+                    "cancelled": "❌ Отмененные замеры"
                 }
                 title = status_titles.get(list_type, "📋 Замеры")
             else:

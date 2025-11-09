@@ -156,23 +156,9 @@ async def handle_status_change(callback: CallbackQuery):
             # Обновляем временные метки
             if new_status == MeasurementStatus.COMPLETED:
                 measurement.completed_at = datetime.now()
-            elif new_status == MeasurementStatus.IN_PROGRESS and not measurement.assigned_at:
-                measurement.assigned_at = datetime.now()
 
             await session.commit()
             await session.refresh(measurement)
-
-            # Обновляем сообщение
-            new_text = f"✅ <b>Статус обновлен!</b>\n\n"
-            new_text += measurement.get_info_text(detailed=True)
-
-            keyboard = get_measurement_actions_keyboard(
-                measurement.id,
-                is_admin=(user.role == UserRole.ADMIN),
-                current_status=measurement.status
-            )
-
-            await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
 
             # Отправляем уведомления
             if measurement.manager:
@@ -192,14 +178,31 @@ async def handle_status_change(callback: CallbackQuery):
                         measurement.manager
                     )
 
-            status_messages = {
-                MeasurementStatus.IN_PROGRESS: "🔄 Замер в процессе выполнения",
-                MeasurementStatus.COMPLETED: "✅ Замер завершен",
-                MeasurementStatus.CANCELLED: "❌ Замер отменен",
-            }
+            # Если замер завершен - удаляем сообщение
+            if new_status == MeasurementStatus.COMPLETED:
+                await callback.message.delete()
+                await callback.answer("✅ Замер отмечен как выполненный")
+                logger.info(f"Замер #{measurement.id} завершен и сообщение удалено")
+            else:
+                # Для других статусов - обновляем сообщение
+                new_text = f"✅ <b>Статус обновлен!</b>\n\n"
+                new_text += measurement.get_info_text(detailed=True)
 
-            await callback.answer(status_messages.get(new_status, "✅ Статус обновлен"))
-            logger.info(f"Статус замера #{measurement.id} изменен с {old_status.value} на {new_status.value}")
+                keyboard = get_measurement_actions_keyboard(
+                    measurement.id,
+                    is_admin=(user.role == UserRole.ADMIN),
+                    current_status=measurement.status
+                )
+
+                await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
+
+                status_messages = {
+                    MeasurementStatus.ASSIGNED: "📋 Замер в работе",
+                    MeasurementStatus.CANCELLED: "❌ Замер отменен",
+                }
+
+                await callback.answer(status_messages.get(new_status, "✅ Статус обновлен"))
+                logger.info(f"Статус замера #{measurement.id} изменен с {old_status.value} на {new_status.value}")
 
     except Exception as e:
         logger.error(f"Ошибка при изменении статуса: {e}", exc_info=True)
@@ -226,22 +229,11 @@ async def handle_my_measurements(callback: CallbackQuery):
                 title = "📊 Все замеры"
 
             elif status_filter == "in_progress":
-                # ТОЛЬКО замеры в работе (назначенные + в процессе выполнения)
-                assigned_measurements = await get_measurements_by_measurer(
-                    session, user.id, MeasurementStatus.ASSIGNED
-                )
-                in_progress_measurements = await get_measurements_by_measurer(
-                    session, user.id, MeasurementStatus.IN_PROGRESS
-                )
-                # Объединяем списки
-                measurements = list(assigned_measurements) + list(in_progress_measurements)
-                title = "🔄 Замеры в работе"
-
-            elif status_filter == "assigned":
+                # ТОЛЬКО замеры в работе (статус ASSIGNED)
                 measurements = await get_measurements_by_measurer(
                     session, user.id, MeasurementStatus.ASSIGNED
                 )
-                title = "📋 Назначенные замеры"
+                title = "🔄 Замеры в работе"
 
             elif status_filter == "completed":
                 measurements = await get_measurements_by_measurer(
@@ -354,16 +346,10 @@ async def handle_in_progress_measurements_button(message: Message):
         if not user or user.role != UserRole.MEASURER:
             return
 
-        # Получаем замеры в работе (назначенные + в процессе)
-        assigned_measurements = await get_measurements_by_measurer(
+        # Получаем замеры в работе (статус ASSIGNED)
+        measurements = await get_measurements_by_measurer(
             session, user.id, MeasurementStatus.ASSIGNED
         )
-        in_progress_measurements = await get_measurements_by_measurer(
-            session, user.id, MeasurementStatus.IN_PROGRESS
-        )
-
-        # Объединяем списки
-        measurements = list(assigned_measurements) + list(in_progress_measurements)
 
         if not measurements:
             await message.answer("✅ Нет замеров в работе")
