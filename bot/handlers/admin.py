@@ -94,15 +94,12 @@ async def cmd_start(message: Message, has_admin_access: bool = False):
         else:
             text += "Вы вошли как <b>Администратор</b>\n\n"
 
-        text += "📋 Используйте меню ниже для управления замерами:\n\n"
+        text += "📋 Используйте меню ниже для управления:\n\n"
         text += "Доступные команды:\n"
         text += "/menu - Главное меню\n"
-        text += "/users - Управление пользователями\n"
-        text += "/measurers - Список замерщиков\n"
-        text += "/pending - Новые замеры\n"
-        text += "/all - Все замеры\n"
-        text += "/measurement ID - Просмотр замера по ID\n"
-        text += "/assign ID - Назначить замерщика на замер\n"
+        text += "/users - Пользователи\n"
+        text += "/all - Все замеры (последние 20)\n"
+        text += "/pending - Замеры в работе\n"
 
         # Reply клавиатура с быстрыми командами
         reply_keyboard = get_admin_commands_keyboard()
@@ -159,7 +156,7 @@ async def cmd_measurers(message: Message, has_admin_access: bool = False):
 
 @admin_router.message(Command("pending"))
 async def cmd_pending(message: Message, has_admin_access: bool = False):
-    """Показать замеры в работе"""
+    """Показать замеры в работе (со статусом ASSIGNED)"""
     if not has_admin_access and not is_admin(message.from_user.id):
         await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
@@ -171,7 +168,7 @@ async def cmd_pending(message: Message, has_admin_access: bool = False):
             await message.answer("✅ Нет замеров в работе")
             return
 
-        await message.answer(f"📋 <b>Замеры в работе ({len(measurements)}):</b>", parse_mode="HTML")
+        await message.answer(f"🔄 <b>Замеры в работе ({len(measurements)}):</b>", parse_mode="HTML")
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
@@ -471,7 +468,7 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
                 measurements = await get_measurements_by_status(session, status)
 
                 status_titles = {
-                    "assigned": "📋 Замеры в работе",
+                    "assigned": "🔄 Замеры в работе",
                     "completed": "✅ Выполненные замеры",
                     "cancelled": "❌ Отмененные замеры"
                 }
@@ -532,43 +529,12 @@ async def handle_users_button(message: Message, has_admin_access: bool = False):
     await cmd_users(message, has_admin_access=has_admin_access)
 
 
-@admin_router.message(F.text == "🆕 Новые замеры")
-async def handle_pending_button(message: Message, has_admin_access: bool = False):
-    """Обработка нажатия кнопки Новые замеры"""
+@admin_router.message(F.text == "🔄 Замеры в работе")
+async def handle_in_work_button(message: Message, has_admin_access: bool = False):
+    """Обработка нажатия кнопки Замеры в работе"""
     if not has_admin_access and not is_admin(message.from_user.id):
         return
     await cmd_pending(message, has_admin_access=has_admin_access)
-
-
-@admin_router.message(F.text == "🔄 В процессе")
-async def handle_in_progress_button(message: Message, has_admin_access: bool = False):
-    """Обработка нажатия кнопки В процессе"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-
-    async for session in get_db():
-        measurements = await get_measurements_by_status(session, MeasurementStatus.IN_PROGRESS)
-
-        if not measurements:
-            await message.answer("✅ Нет замеров в процессе выполнения")
-            return
-
-        text = f"🔄 <b>Замеры в процессе ({len(measurements)}):</b>\n\n"
-
-        for measurement in measurements:
-            text += f"━━━━━━━━━━━━━━━\n"
-            text += measurement.get_info_text(detailed=False)
-            text += "\n"
-
-        await message.answer(text, parse_mode="HTML")
-
-
-@admin_router.message(F.text == "👥 Замерщики")
-async def handle_measurers_button(message: Message, has_admin_access: bool = False):
-    """Обработка нажатия кнопки Замерщики"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_measurers(message, has_admin_access=has_admin_access)
 
 
 @admin_router.message(F.text == "📊 Все замеры")

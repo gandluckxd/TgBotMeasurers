@@ -125,12 +125,9 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
 
     # Руководитель (supervisor) имеет ПОЛНОСТЬЮ такое же меню как администратор!
     if role in ["admin", "supervisor"]:
-        builder.button(text="📋 Новые замеры", callback_data="list:pending")
-        builder.button(text="🔄 В процессе", callback_data="list:in_progress")
-        builder.button(text="✅ Выполненные", callback_data="list:completed")
+        builder.button(text="👤 Пользователи", callback_data="users_list")
         builder.button(text="📊 Все замеры", callback_data="list:all")
-        builder.button(text="👥 Замерщики", callback_data="measurers_list")
-        builder.button(text="👤 Управление пользователями", callback_data="users_list")
+        builder.button(text="🔄 Замеры в работе", callback_data="list:assigned")
 
     elif role == "measurer":
         # У замерщика ТОЛЬКО 2 команды: Все замеры и Замеры в работе
@@ -142,8 +139,8 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
         builder.button(text="📊 Все замеры", callback_data="manager:all")
         builder.button(text="🔄 Замеры в работе", callback_data="manager:in_progress")
 
-    # Размещаем кнопки в 2 колонки
-    builder.adjust(2)
+    # Размещаем кнопки по одной в строке
+    builder.adjust(1)
 
     return builder.as_markup()
 

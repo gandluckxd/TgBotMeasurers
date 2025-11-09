@@ -12,28 +12,11 @@ def get_admin_commands_keyboard() -> ReplyKeyboardMarkup:
     """
     builder = ReplyKeyboardBuilder()
 
-    # Первая строка - основные команды
-    builder.row(
-        KeyboardButton(text="📋 Главное меню"),
-        KeyboardButton(text="👤 Пользователи")
-    )
-
-    # Вторая строка - пригласительные ссылки
-    builder.row(
-        KeyboardButton(text="🔗 Пригласительные ссылки")
-    )
-
-    # Третья строка - замеры
-    builder.row(
-        KeyboardButton(text="🆕 Новые замеры"),
-        KeyboardButton(text="🔄 В процессе")
-    )
-
-    # Четвёртая строка - списки
-    builder.row(
-        KeyboardButton(text="👥 Замерщики"),
-        KeyboardButton(text="📊 Все замеры")
-    )
+    # Все кнопки по одной в строке
+    builder.row(KeyboardButton(text="📋 Главное меню"))
+    builder.row(KeyboardButton(text="👤 Пользователи"))
+    builder.row(KeyboardButton(text="📊 Все замеры"))
+    builder.row(KeyboardButton(text="🔄 Замеры в работе"))
 
     return builder.as_markup(resize_keyboard=True)
 
