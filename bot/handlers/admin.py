@@ -17,6 +17,7 @@ from database import (
     update_user_role,
     toggle_user_active,
     update_user_amocrm_id,
+    get_recent_notifications,
     MeasurementStatus,
     UserRole
 )
@@ -103,6 +104,7 @@ async def cmd_start(message: Message, has_admin_access: bool = False):
         text += "/users - Пользователи\n"
         text += "/all - Все замеры (последние 20)\n"
         text += "/pending - Замеры в работе\n"
+        text += "/notifications - Уведомления\n"
 
         # Reply клавиатура с быстрыми командами
         reply_keyboard = get_admin_commands_keyboard()
@@ -1126,5 +1128,157 @@ async def handle_user_amocrm_unlink(callback: CallbackQuery, has_admin_access: b
     except Exception as e:
         logger.error(f"Ошибка при отвязке аккаунта: {e}", exc_info=True)
         await callback.answer("❌ Ошибка при отвязке аккаунта", show_alert=True)
+
+
+# ========================================
+# Просмотр уведомлений
+# ========================================
+
+@admin_router.message(Command("notifications"))
+async def cmd_notifications(message: Message, has_admin_access: bool = False):
+    """Показать последние отправленные уведомления"""
+    if not has_admin_access and not is_admin(message.from_user.id):
+        await message.answer("⚠️ У вас нет доступа к этой команде.")
+        return
+
+    async for session in get_db():
+        notifications = await get_recent_notifications(session, limit=20)
+
+        if not notifications:
+            await message.answer("📭 Нет отправленных уведомлений")
+            return
+
+        await message.answer(f"🔔 <b>Последние {len(notifications)} уведомлений:</b>", parse_mode="HTML")
+
+        # Отправляем каждое уведомление отдельным сообщением
+        for notification in notifications:
+            text = f"📨 <b>Уведомление #{notification.id}</b>\n\n"
+
+            # Получатель
+            recipient = notification.recipient
+            text += f"👤 <b>Кому:</b> {recipient.full_name}"
+            if recipient.username:
+                text += f" (@{recipient.username})"
+            text += "\n"
+
+            # Дата отправки
+            text += f"📅 <b>Когда:</b> {notification.sent_at.strftime('%d.%m.%Y %H:%M:%S')}\n"
+
+            # Тип уведомления
+            notification_types = {
+                "assignment": "📋 Назначение замера",
+                "completion": "✅ Завершение замера",
+                "change": "🔄 Изменение замерщика",
+                "status_change": "🔄 Изменение статуса",
+                "new_lead": "🆕 Новая заявка",
+                "manager_notification": "💼 Уведомление менеджера"
+            }
+            type_text = notification_types.get(notification.notification_type, notification.notification_type)
+            text += f"🏷 <b>Тип:</b> {type_text}\n\n"
+
+            # Текст уведомления (убираем HTML теги для краткости)
+            import re
+            clean_text = re.sub('<[^<]+?>', '', notification.message_text)
+            # Ограничиваем длину текста
+            if len(clean_text) > 200:
+                clean_text = clean_text[:200] + "..."
+            text += f"💬 <b>Текст:</b>\n{clean_text}"
+
+            await message.answer(text, parse_mode="HTML")
+
+
+@admin_router.callback_query(F.data == "notifications")
+async def handle_notifications_callback(callback: CallbackQuery, has_admin_access: bool = False, user_role: UserRole = None):
+    """Обработчик кнопки 'Уведомления'"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        async for session in get_db():
+            notifications = await get_recent_notifications(session, limit=20)
+
+            # Создаем простую клавиатуру только с кнопкой "Назад"
+            from aiogram.utils.keyboard import InlineKeyboardBuilder
+            builder = InlineKeyboardBuilder()
+            builder.button(text="◀️ Главное меню", callback_data="admin_menu")
+            keyboard = builder.as_markup()
+
+            if not notifications:
+                await callback.message.edit_text(
+                    "📭 <b>Нет отправленных уведомлений</b>",
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                await callback.answer()
+                return
+
+            # Удаляем текущее сообщение
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+
+            # Отправляем заголовок с кнопкой "Назад"
+            await callback.bot.send_message(
+                callback.message.chat.id,
+                f"🔔 <b>Последние {len(notifications)} уведомлений:</b>",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+
+            # Отправляем каждое уведомление отдельным сообщением
+            for notification in notifications:
+                text = f"📨 <b>Уведомление #{notification.id}</b>\n\n"
+
+                # Получатель
+                recipient = notification.recipient
+                text += f"👤 <b>Кому:</b> {recipient.full_name}"
+                if recipient.username:
+                    text += f" (@{recipient.username})"
+                text += "\n"
+
+                # Дата отправки
+                text += f"📅 <b>Когда:</b> {notification.sent_at.strftime('%d.%m.%Y %H:%M:%S')}\n"
+
+                # Тип уведомления
+                notification_types = {
+                    "assignment": "📋 Назначение замера",
+                    "completion": "✅ Завершение замера",
+                    "change": "🔄 Изменение замерщика",
+                    "status_change": "🔄 Изменение статуса",
+                    "new_lead": "🆕 Новая заявка",
+                    "manager_notification": "💼 Уведомление менеджера"
+                }
+                type_text = notification_types.get(notification.notification_type, notification.notification_type)
+                text += f"🏷 <b>Тип:</b> {type_text}\n\n"
+
+                # Текст уведомления (убираем HTML теги для краткости)
+                import re
+                clean_text = re.sub('<[^<]+?>', '', notification.message_text)
+                # Ограничиваем длину текста
+                if len(clean_text) > 200:
+                    clean_text = clean_text[:200] + "..."
+                text += f"💬 <b>Текст:</b>\n{clean_text}"
+
+                await callback.bot.send_message(
+                    callback.message.chat.id,
+                    text,
+                    parse_mode="HTML"
+                )
+
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении уведомлений: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при получении уведомлений", show_alert=True)
+
+
+@admin_router.message(F.text == "🔔 Уведомления")
+async def handle_notifications_button(message: Message, has_admin_access: bool = False):
+    """Обработка нажатия кнопки Уведомления"""
+    if not has_admin_access and not is_admin(message.from_user.id):
+        return
+    await cmd_notifications(message, has_admin_access=has_admin_access)
 
 

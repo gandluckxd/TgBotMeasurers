@@ -222,6 +222,8 @@ async def send_assignment_notification_to_measurer(
         measurer: Объект замерщика
         measurement: Объект замера
     """
+    from database import get_db, create_notification
+
     try:
         text = "📋 <b>Вам назначен новый замер!</b>\n\n"
         text += measurement.get_info_text(detailed=True)
@@ -233,10 +235,34 @@ async def send_assignment_notification_to_measurer(
             parse_mode="HTML"
         )
 
+        # Сохраняем уведомление в БД
+        async for session in get_db():
+            await create_notification(
+                session=session,
+                recipient_id=measurer.id,
+                message_text=text,
+                notification_type="assignment",
+                measurement_id=measurement.id,
+                is_sent=True
+            )
+
         logger.info(f"Отправлено уведомление о назначении замера #{measurement.id} замерщику {measurer.telegram_id}")
 
     except TelegramAPIError as e:
         logger.error(f"Ошибка отправки уведомления замерщику {measurer.telegram_id}: {e}")
+        # Сохраняем неудачную попытку в БД
+        try:
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=measurer.id,
+                    message_text=text if 'text' in locals() else "Ошибка формирования текста",
+                    notification_type="assignment",
+                    measurement_id=measurement.id,
+                    is_sent=False
+                )
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
@@ -256,11 +282,13 @@ async def send_assignment_notification_to_manager(
         measurement: Объект замера
         measurer: Объект назначенного замерщика
     """
+    from database import get_db, create_notification
+
     try:
         text = "✅ <b>Замерщик назначен на ваш заказ</b>\n\n"
         text += f"📋 <b>Замер #{measurement.id}</b>\n"
-        text += f"👤 <b>Клиент:</b> {measurement.client_name}\n"
-        text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+        text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
+        text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n"
         text += f"👷 <b>Замерщик:</b> {measurer.full_name}\n"
         text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
 
@@ -270,10 +298,34 @@ async def send_assignment_notification_to_manager(
             parse_mode="HTML"
         )
 
+        # Сохраняем уведомление в БД
+        async for session in get_db():
+            await create_notification(
+                session=session,
+                recipient_id=manager.id,
+                message_text=text,
+                notification_type="manager_notification",
+                measurement_id=measurement.id,
+                is_sent=True
+            )
+
         logger.info(f"Отправлено уведомление о назначении менеджеру {manager.telegram_id}")
 
     except TelegramAPIError as e:
         logger.error(f"Ошибка отправки уведомления менеджеру {manager.telegram_id}: {e}")
+        # Сохраняем неудачную попытку в БД
+        try:
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=manager.id,
+                    message_text=text if 'text' in locals() else "Ошибка формирования текста",
+                    notification_type="manager_notification",
+                    measurement_id=measurement.id,
+                    is_sent=False
+                )
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
@@ -334,13 +386,15 @@ async def send_measurer_change_notification(
         measurement: Объект замера
         manager: Менеджер (если есть)
     """
+    from database import get_db, create_notification
+
     # Уведомление старому замерщику
     if old_measurer:
         try:
             text = "⚠️ <b>Вы сняты с замера</b>\n\n"
             text += f"📋 <b>Замер #{measurement.id}</b>\n"
-            text += f"👤 <b>Клиент:</b> {measurement.client_name}\n"
-            text += f"📍 <b>Адрес:</b> {measurement.address}\n\n"
+            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
+            text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n\n"
             text += f"Замер переназначен на: {new_measurer.full_name}"
 
             await bot.send_message(
@@ -348,6 +402,17 @@ async def send_measurer_change_notification(
                 text=text,
                 parse_mode="HTML"
             )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=old_measurer.id,
+                    message_text=text,
+                    notification_type="change",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления старому замерщику: {e}")
 
@@ -359,8 +424,8 @@ async def send_measurer_change_notification(
         try:
             text = "🔄 <b>Изменен замерщик на вашем заказе</b>\n\n"
             text += f"📋 <b>Замер #{measurement.id}</b>\n"
-            text += f"👤 <b>Клиент:</b> {measurement.client_name}\n"
-            text += f"📍 <b>Адрес:</b> {measurement.address}\n\n"
+            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
+            text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n\n"
 
             if old_measurer:
                 text += f"<b>Старый замерщик:</b> {old_measurer.full_name}\n"
@@ -372,6 +437,17 @@ async def send_measurer_change_notification(
                 text=text,
                 parse_mode="HTML"
             )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=manager.id,
+                    message_text=text,
+                    notification_type="change",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления менеджеру: {e}")
 
@@ -389,12 +465,14 @@ async def send_completion_notification(
         measurement: Объект замера
         manager: Менеджер (если есть)
     """
+    from database import get_db, create_notification
+
     if manager:
         try:
             text = "✅ <b>Замер выполнен!</b>\n\n"
             text += f"📋 <b>Замер #{measurement.id}</b>\n"
-            text += f"👤 <b>Клиент:</b> {measurement.client_name}\n"
-            text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
+            text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n"
 
             if measurement.measurer:
                 text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
@@ -407,6 +485,17 @@ async def send_completion_notification(
                 text=text,
                 parse_mode="HTML"
             )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=manager.id,
+                    message_text=text,
+                    notification_type="completion",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
 
             logger.info(f"Отправлено уведомление о завершении менеджеру {manager.telegram_id}")
 

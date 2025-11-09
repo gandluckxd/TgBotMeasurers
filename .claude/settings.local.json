@@ -16,7 +16,8 @@
       "Bash(del test_amocrm.py test_token_simple.py get_amocrm_tokens.py amocrm_auth_link.py)",
       "Bash(venvScriptspython.exe main.py)",
       "Bash(./venv/Scripts/python.exe:*)",
-      "Bash(dir /b:*)"
+      "Bash(dir /b:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

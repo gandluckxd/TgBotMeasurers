@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy import select
 from loguru import logger
 
-from database.models import Base, User, Measurement, InviteLink, UserRole, MeasurementStatus
+from database.models import Base, User, Measurement, InviteLink, UserRole, MeasurementStatus, Notification
 from config import settings
 
 
@@ -613,3 +613,94 @@ async def get_user_by_amocrm_id(
         select(User).where(User.amocrm_user_id == amocrm_user_id)
     )
     return result.scalar_one_or_none()
+
+
+# ============================================================================
+# Функции для работы с уведомлениями
+# ============================================================================
+
+async def create_notification(
+    session: AsyncSession,
+    recipient_id: int,
+    message_text: str,
+    notification_type: str,
+    measurement_id: int | None = None,
+    is_sent: bool = True
+) -> Notification:
+    """
+    Создать запись об отправленном уведомлении
+
+    Args:
+        session: Сессия БД
+        recipient_id: ID получателя уведомления
+        message_text: Текст уведомления
+        notification_type: Тип уведомления (assignment, completion, change, etc.)
+        measurement_id: ID замера (если применимо)
+        is_sent: Успешно ли отправлено уведомление
+
+    Returns:
+        Созданное уведомление
+    """
+    notification = Notification(
+        recipient_id=recipient_id,
+        message_text=message_text,
+        notification_type=notification_type,
+        measurement_id=measurement_id,
+        is_sent=is_sent
+    )
+    session.add(notification)
+    await session.commit()
+    await session.refresh(notification)
+
+    logger.debug(f"Создано уведомление #{notification.id} для пользователя {recipient_id}")
+    return notification
+
+
+async def get_recent_notifications(
+    session: AsyncSession,
+    limit: int = 20
+) -> list[Notification]:
+    """
+    Получить последние уведомления
+
+    Args:
+        session: Сессия БД
+        limit: Количество уведомлений
+
+    Returns:
+        Список уведомлений
+    """
+    from sqlalchemy.orm import joinedload
+
+    result = await session.execute(
+        select(Notification)
+        .options(joinedload(Notification.recipient))
+        .order_by(Notification.sent_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().unique().all())
+
+
+async def get_notifications_by_user(
+    session: AsyncSession,
+    user_id: int,
+    limit: int = 20
+) -> list[Notification]:
+    """
+    Получить уведомления для конкретного пользователя
+
+    Args:
+        session: Сессия БД
+        user_id: ID пользователя
+        limit: Количество уведомлений
+
+    Returns:
+        Список уведомлений
+    """
+    result = await session.execute(
+        select(Notification)
+        .where(Notification.recipient_id == user_id)
+        .order_by(Notification.sent_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())

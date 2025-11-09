@@ -4,6 +4,7 @@ from database.models import (
     User,
     Measurement,
     InviteLink,
+    Notification,
     UserRole,
     MeasurementStatus
 )
@@ -33,7 +34,10 @@ from database.database import (
     get_all_invite_links,
     use_invite_link,
     toggle_invite_link_active,
-    delete_invite_link
+    delete_invite_link,
+    create_notification,
+    get_recent_notifications,
+    get_notifications_by_user
 )
 
 __all__ = [
@@ -42,6 +46,7 @@ __all__ = [
     "User",
     "Measurement",
     "InviteLink",
+    "Notification",
     "UserRole",
     "MeasurementStatus",
     # Database
@@ -74,4 +79,8 @@ __all__ = [
     "use_invite_link",
     "toggle_invite_link_active",
     "delete_invite_link",
+    # Notification functions
+    "create_notification",
+    "get_recent_notifications",
+    "get_notifications_by_user",
 ]

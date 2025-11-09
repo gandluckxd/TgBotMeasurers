@@ -135,6 +135,7 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
         builder.button(text="📊 Все замеры", callback_data="list:all")
         builder.button(text="🔄 Замеры в работе", callback_data="list:assigned")
         builder.button(text="🗺 Управление зонами", callback_data="manage_zones")
+        builder.button(text="🔔 Уведомления", callback_data="notifications")
 
     elif role == "measurer":
         # У замерщика ТОЛЬКО 2 команды: Все замеры и Замеры в работе

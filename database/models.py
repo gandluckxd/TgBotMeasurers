@@ -341,3 +341,36 @@ class RoundRobinCounter(Base):
 
     def __repr__(self) -> str:
         return f"<RoundRobinCounter(last_assigned_user_id={self.last_assigned_user_id})>"
+
+
+class Notification(Base):
+    """Модель уведомления"""
+    __tablename__ = 'notifications'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Кому было отправлено уведомление
+    recipient_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    recipient: Mapped["User"] = relationship("User", foreign_keys=[recipient_id])
+
+    # Текст уведомления
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Тип уведомления (для фильтрации)
+    notification_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    # Связь с замером (если уведомление связано с замером)
+    measurement_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("measurements.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Успешно ли было отправлено
+    is_sent: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    # Временная метка
+    sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    def __repr__(self) -> str:
+        return f"<Notification(id={self.id}, type={self.notification_type}, recipient_id={self.recipient_id})>"
