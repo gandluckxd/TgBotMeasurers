@@ -1180,8 +1180,8 @@ async def cmd_notifications(message: Message, has_admin_access: bool = False):
             import re
             clean_text = re.sub('<[^<]+?>', '', notification.message_text)
             # Ограничиваем длину текста
-            if len(clean_text) > 200:
-                clean_text = clean_text[:200] + "..."
+            if len(clean_text) > 500:
+                clean_text = clean_text[:500] + "..."
             text += f"💬 <b>Текст:</b>\n{clean_text}"
 
             await message.answer(text, parse_mode="HTML")
@@ -1257,8 +1257,8 @@ async def handle_notifications_callback(callback: CallbackQuery, has_admin_acces
                 import re
                 clean_text = re.sub('<[^<]+?>', '', notification.message_text)
                 # Ограничиваем длину текста
-                if len(clean_text) > 200:
-                    clean_text = clean_text[:200] + "..."
+                if len(clean_text) > 500:
+                    clean_text = clean_text[:500] + "..."
                 text += f"💬 <b>Текст:</b>\n{clean_text}"
 
                 await callback.bot.send_message(
