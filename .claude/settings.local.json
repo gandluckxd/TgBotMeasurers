@@ -33,7 +33,10 @@
       "Bash(.\\venv\\Scripts\\python.exe:*)",
       "Bash(ping:*)",
       "Bash(d:TgBotMeasurersvenvScriptspython.exe main.py)",
-      "Bash(cmd.exe /c \"d:\\TgBotMeasurers\\venv\\Scripts\\python.exe main.py\")"
+      "Bash(cmd.exe /c \"d:\\TgBotMeasurers\\venv\\Scripts\\python.exe main.py\")",
+      "Bash(.\\venv\\Scripts\\python.exe -m py_compile:*)",
+      "Bash(venv\\Scripts\\python.exe -m py_compile:*)",
+      "Bash(d:\\TgBotMeasurers\\venv\\Scripts\\python.exe -m py_compile:*)"
     ],
     "deny": [],
     "ask": []

@@ -170,38 +170,40 @@ async def send_new_measurement_to_admin(
         measurement: Объект замера
     """
     try:
-        from database import get_db, get_all_measurers
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-        # Получаем список замерщиков для кнопок
-        async for session in get_db():
-            measurers = await get_all_measurers(session)
+        # Формируем текст уведомления
+        text = "🆕 <b>Новый замер!</b>\n\n"
+        text += measurement.get_info_text(detailed=True)
 
-            if not measurers:
-                # Если нет замерщиков, отправляем просто уведомление
-                text = "⚠️ <b>Новый замер, но нет доступных замерщиков!</b>\n\n"
-                text += measurement.get_info_text(detailed=True)
+        # Создаем клавиатуру с кнопкой "Изменить замерщика"
+        builder = InlineKeyboardBuilder()
 
-                await bot.send_message(
-                    chat_id=admin_telegram_id,
-                    text=text,
-                    parse_mode="HTML"
-                )
-            else:
-                # Отправляем уведомление с кнопками выбора замерщика
-                text = "🆕 <b>Новый замер!</b>\n\n"
-                text += measurement.get_info_text(detailed=True)
-                text += "\n\n👇 <b>Выберите замерщика:</b>"
+        if measurement.measurer:
+            # Замерщик был назначен автоматически
+            builder.button(
+                text="🔄 Изменить замерщика",
+                callback_data=f"change_measurer:{measurement.id}"
+            )
+        else:
+            # Замерщик не был назначен (нет подходящего по зоне)
+            builder.button(
+                text="👷 Назначить замерщика",
+                callback_data=f"change_measurer:{measurement.id}"
+            )
 
-                keyboard = get_measurers_keyboard(measurers, measurement.id)
+        builder.adjust(1)
+        keyboard = builder.as_markup()
 
-                await bot.send_message(
-                    chat_id=admin_telegram_id,
-                    text=text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
+        await bot.send_message(
+            chat_id=admin_telegram_id,
+            text=text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
 
-            logger.info(f"Отправлено уведомление о замере #{measurement.id} администратору {admin_telegram_id}")
+        logger.info(f"Отправлено уведомление о замере #{measurement.id} администратору {admin_telegram_id}")
 
     except TelegramAPIError as e:
         logger.error(f"Ошибка отправки уведомления администратору {admin_telegram_id}: {e}")

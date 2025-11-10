@@ -269,14 +269,16 @@ class WebhookProcessor:
             logger.error(f"Ошибка создания замера из сделки {lead_id}: {e}", exc_info=True)
 
     async def _notify_admins_new_measurement(self, measurement):
-        """Отправка уведомления администраторам о новом замере"""
+        """Отправка уведомления администраторам и руководителям о новом замере"""
         if not self.bot:
             logger.warning("Bot instance не установлен, уведомление не отправлено")
             return
 
         from config import settings
         from bot.utils.notifications import send_new_measurement_to_admin
+        from database import get_db, get_all_supervisors
 
+        # Отправляем уведомления администраторам из конфига
         for admin_id in settings.admin_ids_list:
             try:
                 await send_new_measurement_to_admin(
@@ -287,6 +289,20 @@ class WebhookProcessor:
                 logger.info(f"Отправлено уведомление администратору {admin_id}")
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления администратору {admin_id}: {e}")
+
+        # Отправляем уведомления всем руководителям из БД
+        async for session in get_db():
+            supervisors = await get_all_supervisors(session)
+            for supervisor in supervisors:
+                try:
+                    await send_new_measurement_to_admin(
+                        bot=self.bot,
+                        admin_telegram_id=supervisor.telegram_id,
+                        measurement=measurement
+                    )
+                    logger.info(f"Отправлено уведомление руководителю {supervisor.full_name} ({supervisor.telegram_id})")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления руководителю {supervisor.telegram_id}: {e}")
 
     async def _notify_measurer_new_assignment(self, measurement):
         """Отправка уведомления замерщику о назначении замера"""
