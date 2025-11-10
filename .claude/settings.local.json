@@ -36,7 +36,9 @@
       "Bash(cmd.exe /c \"d:\\TgBotMeasurers\\venv\\Scripts\\python.exe main.py\")",
       "Bash(.\\venv\\Scripts\\python.exe -m py_compile:*)",
       "Bash(venv\\Scripts\\python.exe -m py_compile:*)",
-      "Bash(d:\\TgBotMeasurers\\venv\\Scripts\\python.exe -m py_compile:*)"
+      "Bash(d:\\TgBotMeasurers\\venv\\Scripts\\python.exe -m py_compile:*)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe clear_db.py)",
+      "Bash(del clear_db.py)"
     ],
     "deny": [],
     "ask": []

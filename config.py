@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # Server
     server_host: str = Field(default="0.0.0.0", description="Хост сервера")
-    server_port: int = Field(default=8000, description="Порт сервера")
+    server_port: int = Field(default=8020, description="Порт сервера")
 
     # Database
     database_url: str = Field(
