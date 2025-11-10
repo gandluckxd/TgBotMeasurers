@@ -1,10 +1,8 @@
-"""Обработчики для управления пригласительными ссылками (только для администраторов)"""
+"""Обработчики для управления пригласительными ссылками (для администраторов и руководителей)"""
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
-from loguru import logger
 
-from config import settings
 from database.database import (
     get_session,
     create_invite_link,
@@ -27,18 +25,13 @@ from bot.keyboards.inline import (
 invite_links_router = Router(name="invite_links")
 
 
-def is_admin(telegram_id: int) -> bool:
-    """Проверка, является ли пользователь администратором"""
-    return telegram_id in settings.admin_ids_list
-
-
 @invite_links_router.message(Command("invites"))
-async def cmd_invite_links(message: Message):
+async def cmd_invite_links(message: Message, has_admin_access: bool = False):
     """
     Команда для просмотра всех пригласительных ссылок
-    Только для администраторов
+    Доступно для администраторов и руководителей
     """
-    if not is_admin(message.from_user.id):
+    if not has_admin_access:
         await message.answer("❌ У вас нет доступа к этой команде")
         return
 
@@ -66,9 +59,9 @@ async def cmd_invite_links(message: Message):
 
 
 @invite_links_router.callback_query(F.data == "invite_links")
-async def show_invite_links(callback: CallbackQuery):
+async def show_invite_links(callback: CallbackQuery, has_admin_access: bool = False):
     """Показать список пригласительных ссылок"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -97,9 +90,9 @@ async def show_invite_links(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invites_page:"))
-async def navigate_invite_links(callback: CallbackQuery):
+async def navigate_invite_links(callback: CallbackQuery, has_admin_access: bool = False):
     """Навигация по страницам списка пригласительных ссылок"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -122,9 +115,9 @@ async def navigate_invite_links(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_detail:"))
-async def show_invite_detail(callback: CallbackQuery):
+async def show_invite_detail(callback: CallbackQuery, has_admin_access: bool = False):
     """Показать детальную информацию о пригласительной ссылке"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -163,9 +156,9 @@ async def show_invite_detail(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data == "invite_create")
-async def start_create_invite(callback: CallbackQuery):
+async def start_create_invite(callback: CallbackQuery, has_admin_access: bool = False):
     """Начать создание новой пригласительной ссылки"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -179,9 +172,9 @@ async def start_create_invite(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_role:"))
-async def select_invite_role(callback: CallbackQuery):
+async def select_invite_role(callback: CallbackQuery, has_admin_access: bool = False):
     """Выбор роли для пригласительной ссылки"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -203,9 +196,9 @@ async def select_invite_role(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_create_unlimited:"))
-async def create_unlimited_invite(callback: CallbackQuery):
+async def create_unlimited_invite(callback: CallbackQuery, has_admin_access: bool = False):
     """Создать пригласительную ссылку без ограничений"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -254,9 +247,9 @@ async def create_unlimited_invite(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_create_uses:"))
-async def create_limited_invite(callback: CallbackQuery):
+async def create_limited_invite(callback: CallbackQuery, has_admin_access: bool = False):
     """Создать пригласительную ссылку с ограничением использований"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -308,9 +301,9 @@ async def create_limited_invite(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_toggle:"))
-async def toggle_invite_active(callback: CallbackQuery):
+async def toggle_invite_active(callback: CallbackQuery, has_admin_access: bool = False):
     """Переключить активность пригласительной ссылки"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -353,9 +346,9 @@ async def toggle_invite_active(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_delete_confirm:"))
-async def confirm_delete_invite(callback: CallbackQuery):
+async def confirm_delete_invite(callback: CallbackQuery, has_admin_access: bool = False):
     """Подтверждение удаления пригласительной ссылки"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -372,9 +365,9 @@ async def confirm_delete_invite(callback: CallbackQuery):
 
 
 @invite_links_router.callback_query(F.data.startswith("invite_delete:"))
-async def delete_invite(callback: CallbackQuery):
+async def delete_invite(callback: CallbackQuery, has_admin_access: bool = False):
     """Удалить пригласительную ссылку"""
-    if not is_admin(callback.from_user.id):
+    if not has_admin_access:
         await callback.answer("❌ Недостаточно прав", show_alert=True)
         return
 
@@ -410,10 +403,10 @@ async def delete_invite(callback: CallbackQuery):
 
 # Добавляем кнопку "Пригласительные ссылки" в быстрые команды админа
 @invite_links_router.message(F.text == "🔗 Пригласительные ссылки")
-async def quick_invite_links(message: Message):
+async def quick_invite_links(message: Message, has_admin_access: bool = False):
     """Быстрая команда для просмотра пригласительных ссылок"""
-    if not is_admin(message.from_user.id):
+    if not has_admin_access:
         await message.answer("❌ У вас нет доступа к этой команде")
         return
 
-    await cmd_invite_links(message)
+    await cmd_invite_links(message, has_admin_access=has_admin_access)

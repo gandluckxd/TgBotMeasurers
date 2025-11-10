@@ -23,7 +23,17 @@
       "Bash(git log:*)",
       "Bash(find:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(del /f .coverage .coveragerc coverage.xml 2)",
+      "Bash(venv\\Scripts\\pip.exe:*)",
+      "Bash(rm:*)",
+      "Bash(./venv/Scripts/pip.exe:*)",
+      "Bash(tasklist:*)",
+      "Bash(timeout /t 3 /nobreak)",
+      "Bash(.\\venv\\Scripts\\python.exe:*)",
+      "Bash(ping:*)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe main.py)",
+      "Bash(cmd.exe /c \"d:\\TgBotMeasurers\\venv\\Scripts\\python.exe main.py\")"
     ],
     "deny": [],
     "ask": []

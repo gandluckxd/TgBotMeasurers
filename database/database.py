@@ -263,7 +263,15 @@ async def create_measurement(
     )
     session.add(measurement)
     await session.commit()
-    await session.refresh(measurement)
+
+    # Загружаем объект заново со всеми связями (measurer, manager)
+    from sqlalchemy.orm import joinedload
+    result = await session.execute(
+        select(Measurement)
+        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .where(Measurement.id == measurement.id)
+    )
+    measurement = result.scalar_one()
 
     if assigned_measurer:
         logger.info(f"Создан новый замер: {measurement}, назначен замерщик: {assigned_measurer.full_name}")

@@ -177,10 +177,12 @@ class WebhookProcessor:
             # Извлекаем данные из сделки
             lead_name = lead.get("name", "Неизвестная сделка")
 
-            # Получаем имя ответственного пользователя
+            # Получаем имя и ID ответственного пользователя из AmoCRM
             responsible_user_name = None
+            responsible_user_id = None
             if responsible_user:
                 responsible_user_name = responsible_user.get("name")
+                responsible_user_id = responsible_user.get("id")
 
             # Извлекаем данные контакта
             contact_name = None
@@ -223,6 +225,18 @@ class WebhookProcessor:
                     logger.info(f"Замер для сделки {lead_id} уже существует")
                     return
 
+                # Ищем менеджера по amocrm_user_id
+                from database import get_user_by_amocrm_id
+                manager = None
+                manager_id = None
+                if responsible_user_id:
+                    manager = await get_user_by_amocrm_id(session, responsible_user_id)
+                    if manager:
+                        manager_id = manager.id
+                        logger.info(f"Найден менеджер {manager.full_name} (AmoCRM ID: {responsible_user_id})")
+                    else:
+                        logger.warning(f"Менеджер с AmoCRM ID {responsible_user_id} не найден в базе")
+
                 # Создаем новый замер
                 measurement = await create_measurement(
                     session=session,
@@ -232,14 +246,24 @@ class WebhookProcessor:
                     contact_name=contact_name,
                     contact_phone=contact_phone,
                     address=address,
-                    delivery_zone=delivery_zone
+                    delivery_zone=delivery_zone,
+                    manager_id=manager_id
                 )
 
                 logger.info(f"Создан замер #{measurement.id} для сделки {lead_id}")
 
-                # Отправляем уведомление администраторам
+                # Отправляем уведомления
                 if self.bot:
+                    # Уведомление администраторам
                     await self._notify_admins_new_measurement(measurement)
+
+                    # Уведомление замерщику, если он был назначен
+                    if measurement.measurer:
+                        await self._notify_measurer_new_assignment(measurement)
+
+                    # Уведомление менеджеру, если он был привязан
+                    if manager and measurement.measurer:
+                        await self._notify_manager_new_assignment(measurement, manager)
 
         except Exception as e:
             logger.error(f"Ошибка создания замера из сделки {lead_id}: {e}", exc_info=True)
@@ -263,3 +287,40 @@ class WebhookProcessor:
                 logger.info(f"Отправлено уведомление администратору {admin_id}")
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления администратору {admin_id}: {e}")
+
+    async def _notify_measurer_new_assignment(self, measurement):
+        """Отправка уведомления замерщику о назначении замера"""
+        if not self.bot:
+            logger.warning("Bot instance не установлен, уведомление не отправлено")
+            return
+
+        from bot.utils.notifications import send_assignment_notification_to_measurer
+
+        try:
+            await send_assignment_notification_to_measurer(
+                bot=self.bot,
+                measurer=measurement.measurer,
+                measurement=measurement
+            )
+            logger.info(f"Отправлено уведомление о назначении замерщику {measurement.measurer.full_name}")
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления замерщику: {e}")
+
+    async def _notify_manager_new_assignment(self, measurement, manager):
+        """Отправка уведомления менеджеру о назначении замерщика"""
+        if not self.bot:
+            logger.warning("Bot instance не установлен, уведомление не отправлено")
+            return
+
+        from bot.utils.notifications import send_assignment_notification_to_manager
+
+        try:
+            await send_assignment_notification_to_manager(
+                bot=self.bot,
+                manager=manager,
+                measurement=measurement,
+                measurer=measurement.measurer
+            )
+            logger.info(f"Отправлено уведомление о назначении замерщика менеджеру {manager.full_name}")
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления менеджеру: {e}")
