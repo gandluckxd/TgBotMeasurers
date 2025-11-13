@@ -48,7 +48,9 @@
       "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile database/database.py)",
       "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile bot/utils/notifications.py)",
       "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile bot/handlers/admin.py)",
-      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile server/webhook.py)"
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile server/webhook.py)",
+      "Bash(venvScriptspython.exe migrationsmigrate.py)",
+      "Bash(.venvScriptspython.exe migrationsmigrate.py)"
     ],
     "deny": [],
     "ask": []

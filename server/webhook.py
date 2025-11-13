@@ -207,6 +207,9 @@ class WebhookProcessor:
 
             address = None  # Поле с ID 809475
             delivery_zone = None  # Поле с ID 808753
+            order_number = None  # Номер заказа (ID: 667253)
+            windows_count = None  # Количество окон (ID: 676403)
+            windows_area = None  # Площадь окон (ID: 808751)
 
             for field in lead_custom_fields:
                 field_id = field.get("field_id")
@@ -216,6 +219,12 @@ class WebhookProcessor:
                     address = values[0].get("value")
                 elif field_id == 808753 and values:  # Зона доставки
                     delivery_zone = values[0].get("value")
+                elif field_id == 667253 and values:  # Номер заказа
+                    order_number = str(values[0].get("value"))
+                elif field_id == 676403 and values:  # Количество окон
+                    windows_count = str(values[0].get("value"))
+                elif field_id == 808751 and values:  # Площадь окон
+                    windows_area = str(values[0].get("value"))
 
             # Создаем замер в БД
             async for session in get_db():
@@ -247,6 +256,9 @@ class WebhookProcessor:
                     contact_phone=contact_phone,
                     address=address,
                     delivery_zone=delivery_zone,
+                    order_number=order_number,
+                    windows_count=windows_count,
+                    windows_area=windows_area,
                     manager_id=manager_id
                 )
 

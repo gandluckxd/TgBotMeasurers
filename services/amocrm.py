@@ -138,6 +138,28 @@ class AmoCRMClient:
 
         return result
 
+    def extract_custom_field_value(self, custom_fields: list, field_id: int) -> Optional[str]:
+        """
+        Извлечь значение кастомного поля по ID
+
+        Args:
+            custom_fields: Список кастомных полей из AmoCRM
+            field_id: ID поля
+
+        Returns:
+            Значение поля или None
+        """
+        if not custom_fields:
+            return None
+
+        for field in custom_fields:
+            if field.get("field_id") == field_id:
+                values = field.get("values", [])
+                if values and len(values) > 0:
+                    return str(values[0].get("value", ""))
+
+        return None
+
     async def get_lead_contacts(self, lead_id: int) -> list[Dict[str, Any]]:
         """
         Получить контакты сделки

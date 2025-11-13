@@ -10,7 +10,14 @@ from bot.keyboards.inline import get_measurers_keyboard, get_measurement_actions
 
 def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
     """
-    Форматирование информации о сделке из AmoCRM для красивого уведомления
+    Унифицированное форматирование информации о сделке из AmoCRM для уведомлений
+
+    Порядок вывода (унифицированный со всеми другими сообщениями):
+    1. Заголовок
+    2. Основная информация о заказе
+    3. Контактные данные
+    4. Дополнительные параметры из AmoCRM
+    5. Ответственный и дата создания
 
     Args:
         full_info: Полная информация о сделке из AmoCRM API
@@ -18,52 +25,30 @@ def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
     Returns:
         Отформатированный текст уведомления
     """
+    from services.amocrm import amocrm_client
+
     lead = full_info.get("lead", {})
     contacts = full_info.get("contacts", [])
     responsible_user = full_info.get("responsible_user")
 
-    # Основная информация
+    # === ЗАГОЛОВОК ===
     text = "🆕 <b>Новая заявка из AmoCRM!</b>\n\n"
 
-    # Название сделки
+    # === БЛОК 1: Основная информация о заказе ===
     lead_name = lead.get("name", "Без названия")
     lead_id = lead.get("id")
-    text += f"📋 <b>Сделка:</b> {lead_name} (ID: {lead_id})\n"
+    text += f"📄 <b>Сделка:</b> {lead_name}\n"
 
-    # Стоимость
-    price = lead.get("price", 0)
-    if price:
-        text += f"💰 <b>Сумма:</b> {price:,.0f} ₽\n"
+    # Получаем кастомные поля сделки
+    lead_custom_fields = lead.get("custom_fields_values", [])
 
-    text += "\n"
-
-    # Информация о клиенте
-    if contacts:
-        contact = contacts[0]  # Берем первый контакт
-        contact_name = contact.get("name", "Не указано")
-        text += f"👤 <b>Клиент:</b> {contact_name}\n"
-
-        # Ищем телефон и email в кастомных полях контакта
-        custom_fields = contact.get("custom_fields_values", [])
-
-        for field in custom_fields:
-            field_code = field.get("field_code")
-            values = field.get("values", [])
-
-            if values:
-                value = values[0].get("value")
-
-                if field_code == "PHONE":
-                    text += f"📱 <b>Телефон:</b> {value}\n"
-                elif field_code == "EMAIL":
-                    text += f"📧 <b>Email:</b> {value}\n"
-    else:
-        text += "👤 <b>Клиент:</b> Не указан\n"
+    # Номер заказа (ID: 667253)
+    order_number = amocrm_client.extract_custom_field_value(lead_custom_fields, 667253)
+    if order_number:
+        text += f"🔢 <b>Номер заказа:</b> {order_number}\n"
 
     # Адрес из кастомных полей сделки
-    lead_custom_fields = lead.get("custom_fields_values", [])
     address_found = False
-
     for field in lead_custom_fields:
         field_code = field.get("field_code")
         values = field.get("values", [])
@@ -77,17 +62,62 @@ def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
     if not address_found:
         text += f"📍 <b>Адрес:</b> Не указан\n"
 
+    text += "\n"
+
+    # === БЛОК 2: Контактные данные ===
+    if contacts:
+        contact = contacts[0]  # Берем первый контакт
+        contact_name = contact.get("name", "Не указано")
+        text += f"👤 <b>Контакт:</b> {contact_name}\n"
+
+        # Ищем телефон в кастомных полях контакта
+        custom_fields = contact.get("custom_fields_values", [])
+        for field in custom_fields:
+            field_code = field.get("field_code")
+            values = field.get("values", [])
+
+            if values and field_code == "PHONE":
+                value = values[0].get("value")
+                text += f"📞 <b>Телефон:</b> {value}\n"
+                break
+    else:
+        text += "👤 <b>Контакт:</b> Не указан\n"
+
     # Ответственный менеджер
     if responsible_user:
         manager_name = responsible_user.get("name", "Не указан")
-        text += f"\n👨‍💼 <b>Менеджер в AmoCRM:</b> {manager_name}\n"
+        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {manager_name}\n"
 
-    # Дата создания
+    text += "\n"
+
+    # === БЛОК 3: Параметры окон из AmoCRM ===
+    has_window_info = False
+
+    # Количество окон (ID: 676403)
+    windows_count = amocrm_client.extract_custom_field_value(lead_custom_fields, 676403)
+    if windows_count:
+        text += f"🪟 <b>Количество окон:</b> {windows_count}\n"
+        has_window_info = True
+
+    # Площадь окон (ID: 808751)
+    windows_area = amocrm_client.extract_custom_field_value(lead_custom_fields, 808751)
+    if windows_area:
+        text += f"📐 <b>Площадь окон:</b> {windows_area} м²\n"
+        has_window_info = True
+
+    if has_window_info:
+        text += "\n"
+
+    # === БЛОК 4: Дополнительная информация ===
+    text += f"🆔 <b>ID сделки в AmoCRM:</b> {lead_id}\n"
+
+    # Дата создания (конвертируем в московское время)
     created_at = lead.get("created_at")
     if created_at:
-        from datetime import datetime
-        created_date = datetime.fromtimestamp(created_at)
-        text += f"📅 <b>Создано:</b> {created_date.strftime('%d.%m.%Y %H:%M')}\n"
+        from utils.timezone_utils import timestamp_to_moscow_time
+        created_date = timestamp_to_moscow_time(created_at)
+        if created_date:
+            text += f"📅 <b>Создано:</b> {created_date.strftime('%d.%m.%Y %H:%M')}\n"
 
     return text
 
@@ -490,7 +520,8 @@ async def send_completion_notification(
         text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
 
     if measurement.completed_at:
-        text += f"📅 <b>Завершено:</b> {measurement.completed_at.strftime('%d.%m.%Y %H:%M')}\n"
+        from utils.timezone_utils import format_moscow_time
+        text += f"📅 <b>Завершено:</b> {format_moscow_time(measurement.completed_at)}\n"
 
     logger.info(f"Начало отправки уведомлений о завершении замера #{measurement.id}")
 

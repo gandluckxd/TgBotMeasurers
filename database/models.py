@@ -101,6 +101,11 @@ class Measurement(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Адрес (ID: 809475)
     delivery_zone: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Зона доставки (ID: 808753)
 
+    # Дополнительные поля из AmoCRM
+    order_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # № в Альтавин Основной (ID: 667253)
+    windows_count: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Количество окон (ID: 676403)
+    windows_area: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Площадь окон (ID: 808751)
+
     # Дополнительная информация
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -156,15 +161,25 @@ class Measurement(Base):
         return status_map.get(self.status, "❓ Неизвестен")
 
     def get_info_text(self, detailed: bool = True) -> str:
-        """Форматированная информация о замере"""
+        """
+        Унифицированная форматированная информация о замере
+
+        Порядок вывода:
+        1. Заголовок (Замер #)
+        2. Основная информация о заказе
+        3. Контактные данные
+        4. Дополнительные параметры из AmoCRM
+        5. Статус и назначение
+        6. Временные метки (если detailed=True)
+        """
         text = f"📋 <b>Замер #{self.id}</b>\n\n"
 
-        # Наименование сделки
+        # === БЛОК 1: Основная информация о заказе ===
         text += f"📄 <b>Сделка:</b> {self.lead_name}\n"
 
-        # Ответственный
-        if self.responsible_user_name:
-            text += f"👤 <b>Ответственный:</b> {self.responsible_user_name}\n"
+        # Номер заказа
+        if self.order_number:
+            text += f"🔢 <b>Номер заказа:</b> {self.order_number}\n"
 
         # Адрес
         if self.address:
@@ -174,29 +189,56 @@ class Measurement(Base):
         if self.delivery_zone:
             text += f"🚚 <b>Зона доставки:</b> {self.delivery_zone}\n"
 
-        # Имя контакта
-        if self.contact_name:
-            text += f"👨‍💼 <b>Контакт:</b> {self.contact_name}\n"
+        text += "\n"
 
-        # Телефон контакта
+        # === БЛОК 2: Контактные данные ===
+        if self.contact_name:
+            text += f"👤 <b>Контакт:</b> {self.contact_name}\n"
+
         if self.contact_phone:
             text += f"📞 <b>Телефон:</b> {self.contact_phone}\n"
 
-        text += f"\n📊 <b>Статус:</b> {self.status_text}\n"
+        # Ответственный в AmoCRM
+        if self.responsible_user_name:
+            text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {self.responsible_user_name}\n"
+
+        text += "\n"
+
+        # === БЛОК 3: Параметры окон из AmoCRM ===
+        has_window_info = False
+        if self.windows_count:
+            text += f"🪟 <b>Количество окон:</b> {self.windows_count}\n"
+            has_window_info = True
+
+        if self.windows_area:
+            text += f"📐 <b>Площадь окон:</b> {self.windows_area} м²\n"
+            has_window_info = True
+
+        if has_window_info:
+            text += "\n"
+
+        # === БЛОК 4: Статус и назначение ===
+        text += f"📊 <b>Статус:</b> {self.status_text}\n"
 
         # Замерщик
         if self.measurer:
             text += f"👷 <b>Замерщик:</b> {self.measurer.full_name}\n"
 
+        # === БЛОК 5: Временные метки (детальная информация) ===
         if detailed:
+            from utils.timezone_utils import format_moscow_time
+
             text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {self.amocrm_lead_id}\n"
-            text += f"📅 <b>Создано:</b> {self.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+
+            # Конвертируем времена в московское время
+            if self.created_at:
+                text += f"📅 <b>Создано:</b> {format_moscow_time(self.created_at)}\n"
 
             if self.assigned_at:
-                text += f"📅 <b>Назначено:</b> {self.assigned_at.strftime('%d.%m.%Y %H:%M')}\n"
+                text += f"📅 <b>Назначено:</b> {format_moscow_time(self.assigned_at)}\n"
 
             if self.completed_at:
-                text += f"📅 <b>Выполнено:</b> {self.completed_at.strftime('%d.%m.%Y %H:%M')}\n"
+                text += f"📅 <b>Выполнено:</b> {format_moscow_time(self.completed_at)}\n"
 
         return text
 

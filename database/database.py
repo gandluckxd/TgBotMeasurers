@@ -260,6 +260,9 @@ async def create_measurement(
     contact_phone: str | None = None,
     address: str | None = None,
     delivery_zone: str | None = None,
+    order_number: str | None = None,
+    windows_count: str | None = None,
+    windows_area: str | None = None,
     manager_id: int | None = None
 ) -> Measurement:
     """Создать новый замер с автоматическим распределением по зонам"""
@@ -278,6 +281,9 @@ async def create_measurement(
         contact_phone=contact_phone,
         address=address,
         delivery_zone=delivery_zone,
+        order_number=order_number,
+        windows_count=windows_count,
+        windows_area=windows_area,
         manager_id=manager_id,
         measurer_id=assigned_measurer.id if assigned_measurer else None,
         assigned_at=None,  # Дата назначения будет установлена после подтверждения
