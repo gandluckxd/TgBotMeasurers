@@ -162,32 +162,43 @@ async def send_new_measurement_to_admin(
     measurement: Measurement
 ):
     """
-    Отправить уведомление администратору о новом замере
+    Отправить уведомление администратору/руководителю о новом замере с запросом подтверждения
 
     Args:
         bot: Экземпляр бота
-        admin_telegram_id: Telegram ID администратора
+        admin_telegram_id: Telegram ID администратора/руководителя
         measurement: Объект замера
     """
     try:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-        # Формируем текст уведомления
-        text = "🆕 <b>Новый замер!</b>\n\n"
+        # Формируем текст уведомления с информацией о распределении
+        text = "🆕 <b>Новый замер - требуется подтверждение!</b>\n\n"
         text += measurement.get_info_text(detailed=True)
 
-        # Создаем клавиатуру с кнопкой "Изменить замерщика"
+        if measurement.measurer:
+            text += f"\n⚡️ <b>Автоматически распределен на:</b> {measurement.measurer.full_name}\n"
+            text += "\n❓ <b>Подтвердите распределение или выберите другого замерщика:</b>"
+        else:
+            text += "\n⚠️ <b>Замерщик не был назначен автоматически</b>\n"
+            text += "\n❓ <b>Выберите замерщика для этого замера:</b>"
+
+        # Создаем клавиатуру с кнопками подтверждения и изменения
         builder = InlineKeyboardBuilder()
 
         if measurement.measurer:
-            # Замерщик был назначен автоматически
+            # Замерщик был назначен - даем кнопки подтверждения и изменения
+            builder.button(
+                text="✅ Подтвердить распределение",
+                callback_data=f"confirm_assignment:{measurement.id}"
+            )
             builder.button(
                 text="🔄 Изменить замерщика",
                 callback_data=f"change_measurer:{measurement.id}"
             )
         else:
-            # Замерщик не был назначен (нет подходящего по зоне)
+            # Замерщик не был назначен - только кнопка выбора
             builder.button(
                 text="👷 Назначить замерщика",
                 callback_data=f"change_measurer:{measurement.id}"
@@ -203,7 +214,7 @@ async def send_new_measurement_to_admin(
             parse_mode="HTML"
         )
 
-        logger.info(f"Отправлено уведомление о замере #{measurement.id} администратору {admin_telegram_id}")
+        logger.info(f"Отправлено уведомление о замере #{measurement.id} администратору/руководителю {admin_telegram_id}")
 
     except TelegramAPIError as e:
         logger.error(f"Ошибка отправки уведомления администратору {admin_telegram_id}: {e}")
@@ -460,28 +471,45 @@ async def send_completion_notification(
     manager: Optional[User] = None
 ):
     """
-    Отправить уведомление о завершении замера
+    Отправить уведомление о завершении замера менеджеру, администраторам и руководителям
 
     Args:
         bot: Экземпляр бота
         measurement: Объект замера
         manager: Менеджер (если есть)
     """
-    from database import get_db, create_notification
+    from database import get_db, create_notification, get_all_admins, get_all_supervisors
 
+    # Формируем текст уведомления
+    text = "✅ <b>Замер выполнен!</b>\n\n"
+    text += f"📋 <b>Замер #{measurement.id}</b>\n"
+    text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
+    text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n"
+
+    if measurement.measurer:
+        text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
+
+    if measurement.completed_at:
+        text += f"📅 <b>Завершено:</b> {measurement.completed_at.strftime('%d.%m.%Y %H:%M')}\n"
+
+    logger.info(f"Начало отправки уведомлений о завершении замера #{measurement.id}")
+
+    # Получаем список администраторов и руководителей
+    admins = []
+    supervisors = []
+
+    try:
+        async for session in get_db():
+            admins = await get_all_admins(session)
+            supervisors = await get_all_supervisors(session)
+            logger.info(f"Найдено администраторов: {len(admins)}, руководителей: {len(supervisors)}")
+            break
+    except Exception as e:
+        logger.error(f"Ошибка получения списка администраторов и руководителей: {e}", exc_info=True)
+
+    # Отправляем уведомление менеджеру
     if manager:
         try:
-            text = "✅ <b>Замер выполнен!</b>\n\n"
-            text += f"📋 <b>Замер #{measurement.id}</b>\n"
-            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
-            text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n"
-
-            if measurement.measurer:
-                text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
-
-            if measurement.completed_at:
-                text += f"📅 <b>Завершено:</b> {measurement.completed_at.strftime('%d.%m.%Y %H:%M')}\n"
-
             await bot.send_message(
                 chat_id=manager.telegram_id,
                 text=text,
@@ -498,8 +526,63 @@ async def send_completion_notification(
                     measurement_id=measurement.id,
                     is_sent=True
                 )
+                break
 
             logger.info(f"Отправлено уведомление о завершении менеджеру {manager.telegram_id}")
 
         except Exception as e:
-            logger.error(f"Ошибка отправки уведомления о завершении: {e}")
+            logger.error(f"Ошибка отправки уведомления о завершении менеджеру: {e}", exc_info=True)
+
+    # Отправляем уведомления администраторам
+    for admin in admins:
+        try:
+            await bot.send_message(
+                chat_id=admin.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=admin.id,
+                    message_text=text,
+                    notification_type="completion",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление о завершении администратору {admin.telegram_id} ({admin.full_name})")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления администратору {admin.telegram_id}: {e}", exc_info=True)
+
+    # Отправляем уведомления руководителям
+    for supervisor in supervisors:
+        try:
+            await bot.send_message(
+                chat_id=supervisor.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=supervisor.id,
+                    message_text=text,
+                    notification_type="completion",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление о завершении руководителю {supervisor.telegram_id} ({supervisor.full_name})")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления руководителю {supervisor.telegram_id}: {e}", exc_info=True)
+
+    logger.info(f"Завершена отправка уведомлений о завершении замера #{measurement.id}")

@@ -38,7 +38,17 @@
       "Bash(venv\\Scripts\\python.exe -m py_compile:*)",
       "Bash(d:\\TgBotMeasurers\\venv\\Scripts\\python.exe -m py_compile:*)",
       "Bash(d:TgBotMeasurersvenvScriptspython.exe clear_db.py)",
-      "Bash(del clear_db.py)"
+      "Bash(del clear_db.py)",
+      "Bash(venv\\Scripts\\pip.exe install:*)",
+      "Bash(.\\venv\\Scripts\\pyinstaller.exe:*)",
+      "Bash(venv/Scripts/pyinstaller.exe:*)",
+      "Bash(dist/MeasurersBot.exe)",
+      "Bash(.venvScriptspython.exe -m py_compile database/database.py)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile database/models.py)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile database/database.py)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile bot/utils/notifications.py)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile bot/handlers/admin.py)",
+      "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile server/webhook.py)"
     ],
     "deny": [],
     "ask": []

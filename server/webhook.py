@@ -252,18 +252,13 @@ class WebhookProcessor:
 
                 logger.info(f"Создан замер #{measurement.id} для сделки {lead_id}")
 
-                # Отправляем уведомления
+                # Отправляем уведомления только администраторам и руководителям для подтверждения
                 if self.bot:
-                    # Уведомление администраторам
+                    # Уведомление администраторам и руководителям с запросом подтверждения
                     await self._notify_admins_new_measurement(measurement)
 
-                    # Уведомление замерщику, если он был назначен
-                    if measurement.measurer:
-                        await self._notify_measurer_new_assignment(measurement)
-
-                    # Уведомление менеджеру, если он был привязан
-                    if manager and measurement.measurer:
-                        await self._notify_manager_new_assignment(measurement, manager)
+                    # Уведомления замерщику и менеджеру НЕ отправляются
+                    # Они будут отправлены после подтверждения руководителем
 
         except Exception as e:
             logger.error(f"Ошибка создания замера из сделки {lead_id}: {e}", exc_info=True)

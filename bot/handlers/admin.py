@@ -405,6 +405,74 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
         await callback.answer("❌ Ошибка при назначении замерщика", show_alert=True)
 
 
+@admin_router.callback_query(F.data.startswith("confirm_assignment:"))
+async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: bool = False):
+    """Обработка подтверждения распределения замерщика"""
+    if not has_admin_access and not is_admin(callback.from_user.id):
+        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
+        return
+
+    try:
+        # Парсим callback data: confirm_assignment:measurement_id
+        measurement_id = int(callback.data.split(":")[1])
+
+        async for session in get_db():
+            measurement = await get_measurement_by_id(session, measurement_id)
+
+            if not measurement:
+                await callback.answer("❌ Замер не найден", show_alert=True)
+                return
+
+            if not measurement.measurer:
+                await callback.answer("❌ Замерщик не назначен", show_alert=True)
+                return
+
+            # Проверяем, что замер в статусе ожидания подтверждения
+            if measurement.status != MeasurementStatus.PENDING_CONFIRMATION:
+                await callback.answer("⚠️ Этот замер уже был подтвержден", show_alert=True)
+                return
+
+            # Подтверждаем назначение
+            measurement.status = MeasurementStatus.ASSIGNED
+            measurement.assigned_at = datetime.now()
+
+            await session.commit()
+            await session.refresh(measurement)
+
+            # Обновляем сообщение
+            new_text = "✅ <b>Распределение подтверждено!</b>\n\n"
+            new_text += measurement.get_info_text(detailed=True)
+
+            keyboard = get_measurement_actions_keyboard(
+                measurement.id,
+                is_admin=True,
+                current_status=measurement.status
+            )
+
+            await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
+
+            # Отправляем уведомления замерщику
+            await send_assignment_notification_to_measurer(callback.bot, measurement.measurer, measurement)
+            logger.info(f"Отправлено уведомление замерщику {measurement.measurer.full_name}")
+
+            # Отправляем уведомление менеджеру
+            if measurement.manager:
+                await send_assignment_notification_to_manager(
+                    callback.bot,
+                    measurement.manager,
+                    measurement,
+                    measurement.measurer
+                )
+                logger.info(f"Отправлено уведомление менеджеру {measurement.manager.full_name}")
+
+            await callback.answer(f"✅ Распределение подтверждено. {measurement.measurer.full_name} назначен на замер")
+            logger.info(f"Замер #{measurement.id} подтвержден руководителем {callback.from_user.id}, замерщик: {measurement.measurer.full_name}")
+
+    except Exception as e:
+        logger.error(f"Ошибка при подтверждении распределения: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при подтверждении распределения", show_alert=True)
+
+
 @admin_router.callback_query(F.data.startswith("change_measurer:"))
 async def handle_change_measurer(callback: CallbackQuery, has_admin_access: bool = False):
     """Обработка изменения замерщика"""

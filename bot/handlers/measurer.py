@@ -170,13 +170,16 @@ async def handle_status_change(callback: CallbackQuery):
                     measurement.status_text
                 )
 
-                # Если замер завершен, отправляем специальное уведомление
-                if new_status == MeasurementStatus.COMPLETED:
-                    await send_completion_notification(
-                        callback.bot,
-                        measurement,
-                        measurement.manager
-                    )
+            # Если замер завершен, отправляем специальное уведомление
+            # менеджеру, администраторам и руководителям
+            if new_status == MeasurementStatus.COMPLETED:
+                logger.info(f"Замер #{measurement.id} завершен, вызываем send_completion_notification")
+                await send_completion_notification(
+                    callback.bot,
+                    measurement,
+                    measurement.manager
+                )
+                logger.info(f"send_completion_notification для замера #{measurement.id} выполнена")
 
             # Если замер завершен - удаляем сообщение
             if new_status == MeasurementStatus.COMPLETED:

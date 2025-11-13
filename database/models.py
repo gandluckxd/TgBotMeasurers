@@ -25,6 +25,7 @@ class UserRole(PyEnum):
 
 class MeasurementStatus(PyEnum):
     """Статусы замеров"""
+    PENDING_CONFIRMATION = "pending_confirmation"  # Ожидает подтверждения руководителем
     ASSIGNED = "assigned"  # Назначен замерщику (по умолчанию при назначении)
     COMPLETED = "completed"  # Выполнен
     CANCELLED = "cancelled"  # Отменен
@@ -147,6 +148,7 @@ class Measurement(Base):
     def status_text(self) -> str:
         """Текстовое представление статуса на русском"""
         status_map = {
+            MeasurementStatus.PENDING_CONFIRMATION: "⏳ Ожидает подтверждения",
             MeasurementStatus.ASSIGNED: "📋 В работе",
             MeasurementStatus.COMPLETED: "✅ Выполнен",
             MeasurementStatus.CANCELLED: "❌ Отменен",

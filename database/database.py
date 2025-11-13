@@ -148,6 +148,17 @@ async def get_all_supervisors(session: AsyncSession) -> list[User]:
     return list(result.scalars().all())
 
 
+async def get_all_admins(session: AsyncSession) -> list[User]:
+    """Получить всех активных администраторов"""
+    result = await session.execute(
+        select(User).where(
+            User.role == UserRole.ADMIN,
+            User.is_active == True
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def get_measurement_by_id(session: AsyncSession, measurement_id: int) -> Measurement | None:
     """Получить замер по ID"""
     from sqlalchemy.orm import joinedload
@@ -269,8 +280,8 @@ async def create_measurement(
         delivery_zone=delivery_zone,
         manager_id=manager_id,
         measurer_id=assigned_measurer.id if assigned_measurer else None,
-        assigned_at=datetime.now() if assigned_measurer else None,
-        status=MeasurementStatus.ASSIGNED
+        assigned_at=None,  # Дата назначения будет установлена после подтверждения
+        status=MeasurementStatus.PENDING_CONFIRMATION  # Ожидает подтверждения руководителем
     )
     session.add(measurement)
     await session.commit()
