@@ -29,3 +29,7 @@ loguru==0.7.2
 
 # Сборка в EXE
 pyinstaller==6.11.1
+
+# Google Sheets
+gspread==6.2.1
+oauth2client==4.1.3

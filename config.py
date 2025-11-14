@@ -43,6 +43,20 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Уровень логирования")
 
+    # Google Sheets
+    google_credentials_file: str = Field(
+        default="credentials.json",
+        description="Путь к файлу credentials.json для Google Sheets"
+    )
+    google_spreadsheet_id: str = Field(
+        ...,
+        description="ID Google таблицы для экспорта"
+    )
+    google_export_interval: int = Field(
+        default=300,
+        description="Интервал экспорта в секундах (по умолчанию 300 = 5 минут)"
+    )
+
     @property
     def admin_ids_list(self) -> List[int]:
         """Возвращает список ID администраторов"""

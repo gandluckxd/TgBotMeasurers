@@ -50,7 +50,12 @@
       "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile bot/handlers/admin.py)",
       "Bash(d:TgBotMeasurersvenvScriptspython.exe -m py_compile server/webhook.py)",
       "Bash(venvScriptspython.exe migrationsmigrate.py)",
-      "Bash(.venvScriptspython.exe migrationsmigrate.py)"
+      "Bash(.venvScriptspython.exe migrationsmigrate.py)",
+      "Bash(.\\venv\\Scripts\\pip.exe install:*)",
+      "Bash(del clear_all_except_zones.py)",
+      "Bash(py test_sheets_export.py:*)",
+      "Bash(py clear_database.py:*)",
+      "Bash(del fill_test_data.py add_5_more_records.py test_sheets_export.py clear_database.py)"
     ],
     "deny": [],
     "ask": []
