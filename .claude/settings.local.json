@@ -55,7 +55,22 @@
       "Bash(del clear_all_except_zones.py)",
       "Bash(py test_sheets_export.py:*)",
       "Bash(py clear_database.py:*)",
-      "Bash(del fill_test_data.py add_5_more_records.py test_sheets_export.py clear_database.py)"
+      "Bash(del fill_test_data.py add_5_more_records.py test_sheets_export.py clear_database.py)",
+      "Bash(.venvScriptspyinstaller.exe --clean exporter.spec)",
+      "Bash(del measurerers_bot.db)",
+      "Bash(if exist measurerers_bot.db del measurerers_bot.db)",
+      "Bash(if exist distmeasurerers_bot.db del distmeasurerers_bot.db)",
+      "Bash(alembic revision:*)",
+      "Bash(py add_new_columns.py:*)",
+      "Bash(build_all.bat)",
+      "Bash(cmd.exe /c build_all.bat)",
+      "Bash(cmd /c \"dir /s /b d:\\TgBotMeasurers\\*.db\")",
+      "Bash(.venvScriptspyinstaller.exe --clean main.spec)",
+      "Bash(venv\\Scripts\\pyinstaller.exe:*)",
+      "Bash(cmd /c build_all.bat)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(d:\\TgBotMeasurers\\venv\\Scripts\\pyinstaller.exe:*)",
+      "Bash(./venv/Scripts/pyinstaller.exe:*)"
     ],
     "deny": [],
     "ask": []

@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from loguru import logger
 
-from config import settings
+from config_exporter import settings
 from services.sheets_export import export_to_google_sheets
 
 
