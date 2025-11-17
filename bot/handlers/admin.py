@@ -353,8 +353,10 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                 await callback.answer("❌ Замерщик не найден", show_alert=True)
                 return
 
-            # Сохраняем старого замерщика для уведомления
+            # Сохраняем старого замерщика и старый статус для проверки
             old_measurer = measurement.measurer
+            old_status = measurement.status
+            was_confirmed = old_status == MeasurementStatus.ASSIGNED
 
             # Назначаем замерщика и ставим статус "Назначен"
             measurement.measurer_id = measurer.id
@@ -376,19 +378,10 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
 
             await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
 
-            # Отправляем уведомления
-            await send_assignment_notification_to_measurer(callback.bot, measurer, measurement)
-
-            if measurement.manager:
-                await send_assignment_notification_to_manager(
-                    callback.bot,
-                    measurement.manager,
-                    measurement,
-                    measurer
-                )
-
-            # Если был старый замерщик, отправляем ему уведомление
-            if old_measurer and old_measurer.id != measurer.id:
+            # Логика уведомлений зависит от того, был ли замер подтвержден ранее
+            if was_confirmed and old_measurer and old_measurer.id != measurer.id:
+                # Замер УЖЕ БЫЛ подтвержден - это реальная смена замерщика
+                # Отправляем уведомления через функцию смены замерщика
                 await send_measurer_change_notification(
                     callback.bot,
                     old_measurer,
@@ -396,6 +389,19 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     measurement,
                     measurement.manager
                 )
+            else:
+                # Замер НЕ БЫЛ подтвержден (PENDING_CONFIRMATION) - это первое назначение
+                # Старый замерщик был просто предложен системой, уведомлять его НЕ НУЖНО
+                # Отправляем уведомления только новому замерщику и менеджеру
+                await send_assignment_notification_to_measurer(callback.bot, measurer, measurement)
+
+                if measurement.manager:
+                    await send_assignment_notification_to_manager(
+                        callback.bot,
+                        measurement.manager,
+                        measurement,
+                        measurer
+                    )
 
             await callback.answer(f"✅ Замер назначен на {measurer.full_name}")
             logger.info(f"Замер #{measurement.id} назначен на замерщика {measurer.id}")
