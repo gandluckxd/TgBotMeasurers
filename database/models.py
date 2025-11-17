@@ -138,6 +138,15 @@ class Measurement(Base):
         back_populates="measurements_as_manager"
     )
 
+    # Кто подтвердил/распределил замер (админ или руководитель)
+    confirmed_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    confirmed_by: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[confirmed_by_user_id]
+    )
+
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     assigned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -160,9 +169,13 @@ class Measurement(Base):
         }
         return status_map.get(self.status, "❓ Неизвестен")
 
-    def get_info_text(self, detailed: bool = True) -> str:
+    def get_info_text(self, detailed: bool = True, show_admin_info: bool = False) -> str:
         """
         Унифицированная форматированная информация о замере
+
+        Args:
+            detailed: Показывать детальную информацию (временные метки, ID сделки)
+            show_admin_info: Показывать информацию для админов/руководителей (кто подтвердил)
 
         Порядок вывода:
         1. Заголовок (Замер #)
@@ -170,7 +183,8 @@ class Measurement(Base):
         3. Контактные данные
         4. Дополнительные параметры из AmoCRM
         5. Статус и назначение
-        6. Временные метки (если detailed=True)
+        6. Информация о подтверждении (только для админов)
+        7. Временные метки (если detailed=True)
         """
         text = f"📋 <b>Замер #{self.id}</b>\n\n"
 
@@ -224,7 +238,11 @@ class Measurement(Base):
         if self.measurer:
             text += f"👷 <b>Замерщик:</b> {self.measurer.full_name}\n"
 
-        # === БЛОК 5: Временные метки (детальная информация) ===
+        # === БЛОК 5: Информация о подтверждении (ТОЛЬКО для админов/руководителей) ===
+        if show_admin_info and self.confirmed_by:
+            text += f"✅ <b>Подтвердил:</b> {self.confirmed_by.full_name}\n"
+
+        # === БЛОК 6: Временные метки (детальная информация) ===
         if detailed:
             from utils.timezone_utils import format_moscow_time
 
@@ -409,6 +427,12 @@ class Notification(Base):
     measurement_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("measurements.id", ondelete="SET NULL"), nullable=True
     )
+
+    # ID сообщения в Telegram (для возможности редактирования/удаления)
+    telegram_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    # ID чата в Telegram
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     # Успешно ли было отправлено
     is_sent: Mapped[bool] = mapped_column(default=True, nullable=False)

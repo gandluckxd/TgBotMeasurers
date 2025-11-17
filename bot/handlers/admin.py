@@ -177,7 +177,7 @@ async def cmd_pending(message: Message, has_admin_access: bool = False):
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
-            msg_text = measurement.get_info_text(detailed=True)
+            msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
                 measurement.id,
@@ -216,7 +216,7 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
-            msg_text = measurement.get_info_text(detailed=True)
+            msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
                 measurement.id,
@@ -262,7 +262,7 @@ async def cmd_measurement(message: Message, has_admin_access: bool = False):
             await message.answer(f"❌ Замер #{measurement_id} не найден")
             return
 
-        text = measurement.get_info_text(detailed=True)
+        text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
         keyboard = get_measurement_actions_keyboard(
             measurement.id,
@@ -314,7 +314,7 @@ async def cmd_assign(message: Message, has_admin_access: bool = False):
             await message.answer("❌ Нет доступных замерщиков")
             return
 
-        text = measurement.get_info_text(detailed=True)
+        text = measurement.get_info_text(detailed=True, show_admin_info=True)
         text += "\n\n👇 <b>Выберите замерщика:</b>"
 
         keyboard = get_measurers_keyboard(measurers, measurement.id)
@@ -363,12 +363,15 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
             measurement.status = MeasurementStatus.ASSIGNED
             measurement.assigned_at = datetime.now()
 
+            # Сохраняем кто подтвердил/распределил
+            measurement.confirmed_by_user_id = callback.from_user.id
+
             await session.commit()
             await session.refresh(measurement)
 
-            # Обновляем сообщение
+            # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Замерщик назначен!</b>\n\n"
-            new_text += measurement.get_info_text(detailed=True)
+            new_text += measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
                 measurement.id,
@@ -419,6 +422,28 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     await zone_service.update_round_robin_counter(measurer.id)
                     logger.info(f"Round-robin счётчик обновлён при первом назначении на замерщика {measurer.id}")
 
+                # ВАЖНО: Удаляем уведомления о подтверждении у других админов/руководителей
+                from database import get_pending_notifications_for_measurement
+                notifications = await get_pending_notifications_for_measurement(session, measurement.id)
+                for notification in notifications:
+                    try:
+                        # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
+                        confirmed_by_name = "другим руководителем"
+                        if measurement.confirmed_by:
+                            confirmed_by_name = measurement.confirmed_by.full_name
+
+                        await callback.bot.edit_message_text(
+                            chat_id=notification.telegram_chat_id,
+                            message_id=notification.telegram_message_id,
+                            text=f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
+                                 f"Распределил: {confirmed_by_name}\n"
+                                 f"Замерщик: {measurer.full_name}",
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Обновлено уведомление у пользователя {notification.recipient_id}")
+                    except Exception as e:
+                        logger.warning(f"Не удалось обновить уведомление {notification.id}: {e}")
+
             await callback.answer(f"✅ Замер назначен на {measurer.full_name}")
             logger.info(f"Замер #{measurement.id} назначен на замерщика {measurer.id}")
 
@@ -458,6 +483,9 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
             measurement.status = MeasurementStatus.ASSIGNED
             measurement.assigned_at = datetime.now()
 
+            # Сохраняем кто подтвердил
+            measurement.confirmed_by_user_id = callback.from_user.id
+
             await session.commit()
             await session.refresh(measurement)
 
@@ -470,9 +498,9 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 await zone_service.update_round_robin_counter(measurement.measurer.id)
                 logger.info(f"Round-robin счётчик обновлён при подтверждении на замерщика {measurement.measurer.id}")
 
-            # Обновляем сообщение
+            # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Распределение подтверждено!</b>\n\n"
-            new_text += measurement.get_info_text(detailed=True)
+            new_text += measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
                 measurement.id,
@@ -495,6 +523,28 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                     measurement.measurer
                 )
                 logger.info(f"Отправлено уведомление менеджеру {measurement.manager.full_name}")
+
+            # ВАЖНО: Удаляем уведомления о подтверждении у других админов/руководителей
+            from database import get_pending_notifications_for_measurement
+            notifications = await get_pending_notifications_for_measurement(session, measurement.id)
+            for notification in notifications:
+                try:
+                    # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
+                    confirmed_by_name = "другим руководителем"
+                    if measurement.confirmed_by:
+                        confirmed_by_name = measurement.confirmed_by.full_name
+
+                    await callback.bot.edit_message_text(
+                        chat_id=notification.telegram_chat_id,
+                        message_id=notification.telegram_message_id,
+                        text=f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
+                             f"Подтвердил: {confirmed_by_name}\n"
+                             f"Замерщик: {measurement.measurer.full_name}",
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Обновлено уведомление у пользователя {notification.recipient_id}")
+                except Exception as e:
+                    logger.warning(f"Не удалось обновить уведомление {notification.id}: {e}")
 
             await callback.answer(f"✅ Распределение подтверждено. {measurement.measurer.full_name} назначен на замер")
             logger.info(f"Замер #{measurement.id} подтвержден руководителем {callback.from_user.id}, замерщик: {measurement.measurer.full_name}")
@@ -529,7 +579,7 @@ async def handle_change_measurer(callback: CallbackQuery, has_admin_access: bool
                 return
 
             text = "🔄 <b>Выберите нового замерщика:</b>\n\n"
-            text += measurement.get_info_text(detailed=True)
+            text += measurement.get_info_text(detailed=True, show_admin_info=True)
             text += "\n\n👇 <b>Выберите замерщика:</b>"
 
             keyboard = get_measurers_keyboard(measurers, measurement.id)
@@ -567,6 +617,12 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
                 measurements = list(result.scalars().unique().all())
                 title = "📊 Все замеры (последние 20)"
 
+            elif list_type == "pending_confirmation":
+                # Замеры ожидающие подтверждения
+                status = MeasurementStatus.PENDING_CONFIRMATION
+                measurements = await get_measurements_by_status(session, status)
+                title = "⏳ Замеры ожидающие подтверждения"
+
             elif list_type in ["assigned", "completed", "cancelled"]:
                 status = MeasurementStatus(list_type)
                 measurements = await get_measurements_by_status(session, status)
@@ -591,7 +647,7 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
 
                 # Отправляем каждый замер отдельным сообщением с inline кнопкой
                 for measurement in measurements:
-                    msg_text = measurement.get_info_text(detailed=True)
+                    msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
                     keyboard = get_measurement_actions_keyboard(
                         measurement.id,

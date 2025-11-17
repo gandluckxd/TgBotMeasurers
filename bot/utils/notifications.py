@@ -205,7 +205,7 @@ async def send_new_measurement_to_admin(
 
         # Формируем текст уведомления с информацией о распределении
         text = "🆕 <b>Новый замер - требуется подтверждение!</b>\n\n"
-        text += measurement.get_info_text(detailed=True)
+        text += measurement.get_info_text(detailed=True, show_admin_info=True)
 
         if measurement.measurer:
             text += f"\n⚡️ <b>Автоматически распределен на:</b> {measurement.measurer.full_name}\n"
@@ -237,12 +237,26 @@ async def send_new_measurement_to_admin(
         builder.adjust(1)
         keyboard = builder.as_markup()
 
-        await bot.send_message(
+        sent_message = await bot.send_message(
             chat_id=admin_telegram_id,
             text=text,
             reply_markup=keyboard,
             parse_mode="HTML"
         )
+
+        # Сохраняем message_id в БД для возможности удаления/редактирования
+        from database import get_db, create_notification
+        async for session in get_db():
+            await create_notification(
+                session=session,
+                recipient_telegram_id=admin_telegram_id,
+                message_text=text,
+                notification_type="new_measurement_confirmation",
+                measurement_id=measurement.id,
+                is_sent=True,
+                telegram_message_id=sent_message.message_id,
+                telegram_chat_id=sent_message.chat.id
+            )
 
         logger.info(f"Отправлено уведомление о замере #{measurement.id} администратору/руководителю {admin_telegram_id}")
 

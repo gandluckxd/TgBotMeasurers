@@ -657,32 +657,49 @@ async def get_user_by_amocrm_id(
 
 async def create_notification(
     session: AsyncSession,
-    recipient_id: int,
-    message_text: str,
-    notification_type: str,
+    recipient_id: int = None,
+    recipient_telegram_id: int = None,
+    message_text: str = "",
+    notification_type: str = "",
     measurement_id: int | None = None,
-    is_sent: bool = True
+    is_sent: bool = True,
+    telegram_message_id: int | None = None,
+    telegram_chat_id: int | None = None
 ) -> Notification:
     """
     Создать запись об отправленном уведомлении
 
     Args:
         session: Сессия БД
-        recipient_id: ID получателя уведомления
+        recipient_id: ID получателя уведомления (внутренний ID в БД)
+        recipient_telegram_id: Telegram ID получателя (если recipient_id не передан)
         message_text: Текст уведомления
         notification_type: Тип уведомления (assignment, completion, change, etc.)
         measurement_id: ID замера (если применимо)
         is_sent: Успешно ли отправлено уведомление
+        telegram_message_id: ID сообщения в Telegram
+        telegram_chat_id: ID чата в Telegram
 
     Returns:
         Созданное уведомление
     """
+    # Если передан telegram_id, находим recipient_id
+    if not recipient_id and recipient_telegram_id:
+        user = await get_user_by_telegram_id(session, recipient_telegram_id)
+        if user:
+            recipient_id = user.id
+        else:
+            logger.warning(f"Пользователь с telegram_id {recipient_telegram_id} не найден")
+            raise ValueError(f"User with telegram_id {recipient_telegram_id} not found")
+
     notification = Notification(
         recipient_id=recipient_id,
         message_text=message_text,
         notification_type=notification_type,
         measurement_id=measurement_id,
-        is_sent=is_sent
+        is_sent=is_sent,
+        telegram_message_id=telegram_message_id,
+        telegram_chat_id=telegram_chat_id
     )
     session.add(notification)
     await session.commit()
@@ -738,5 +755,32 @@ async def get_notifications_by_user(
         .where(Notification.recipient_id == user_id)
         .order_by(Notification.sent_at.desc())
         .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_pending_notifications_for_measurement(
+    session: AsyncSession,
+    measurement_id: int,
+    notification_type: str = "new_measurement_confirmation"
+) -> list[Notification]:
+    """
+    Получить все уведомления для конкретного замера определенного типа
+
+    Args:
+        session: Сессия БД
+        measurement_id: ID замера
+        notification_type: Тип уведомления
+
+    Returns:
+        Список уведомлений
+    """
+    result = await session.execute(
+        select(Notification)
+        .where(
+            Notification.measurement_id == measurement_id,
+            Notification.notification_type == notification_type,
+            Notification.telegram_message_id.isnot(None)  # Только уведомления с message_id
+        )
     )
     return list(result.scalars().all())
