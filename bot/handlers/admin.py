@@ -366,6 +366,27 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
             # Сохраняем кто подтвердил/распределил
             measurement.confirmed_by_user_id = callback.from_user.id
 
+            # ВАЖНО: При первом подтверждении обновляем счётчик round-robin
+            # Делаем это ДО коммита, пока сессия активна
+            if not was_confirmed and (measurement.delivery_zone is None or measurement.delivery_zone == ""):
+                from services.zone_service import ZoneService
+                zone_service = ZoneService(session)
+                await zone_service.update_round_robin_counter(measurer.id)
+                logger.info(f"Round-robin счётчик обновлён при первом назначении на замерщика {measurer.id}")
+            elif was_confirmed and old_measurer and old_measurer.id != measurer.id:
+                # При смене уже подтверждённого замера также обновляем счётчик
+                if measurement.delivery_zone is None or measurement.delivery_zone == "":
+                    from services.zone_service import ZoneService
+                    zone_service = ZoneService(session)
+                    await zone_service.update_round_robin_counter(measurer.id)
+                    logger.info(f"Round-robin счётчик обновлён при смене замерщика на {measurer.id}")
+
+            # ВАЖНО: Получаем уведомления ДО коммита, пока сессия активна
+            notifications_to_update = []
+            if not was_confirmed:
+                from database import get_pending_notifications_for_measurement
+                notifications_to_update = await get_pending_notifications_for_measurement(session, measurement.id)
+
             await session.commit()
             await session.refresh(measurement)
 
@@ -392,14 +413,6 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     measurement,
                     measurement.manager
                 )
-
-                # ВАЖНО: При смене уже подтверждённого замера обновляем счётчик round-robin
-                # (только если использовался round-robin)
-                if measurement.delivery_zone is None or measurement.delivery_zone == "":
-                    from services.zone_service import ZoneService
-                    zone_service = ZoneService(session)
-                    await zone_service.update_round_robin_counter(measurer.id)
-                    logger.info(f"Round-robin счётчик обновлён при смене замерщика на {measurer.id}")
             else:
                 # Замер НЕ БЫЛ подтвержден (PENDING_CONFIRMATION) - это первое назначение
                 # Старый замерщик был просто предложен системой, уведомлять его НЕ НУЖНО
@@ -414,18 +427,8 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                         measurer
                     )
 
-                # ВАЖНО: При первом подтверждении обновляем счётчик round-robin
-                # (только если использовался round-robin)
-                if measurement.delivery_zone is None or measurement.delivery_zone == "":
-                    from services.zone_service import ZoneService
-                    zone_service = ZoneService(session)
-                    await zone_service.update_round_robin_counter(measurer.id)
-                    logger.info(f"Round-robin счётчик обновлён при первом назначении на замерщика {measurer.id}")
-
-                # ВАЖНО: Удаляем уведомления о подтверждении у других админов/руководителей
-                from database import get_pending_notifications_for_measurement
-                notifications = await get_pending_notifications_for_measurement(session, measurement.id)
-                for notification in notifications:
+                # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
+                for notification in notifications_to_update:
                     try:
                         # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
                         confirmed_by_name = "другим руководителем"
@@ -486,17 +489,21 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
             # Сохраняем кто подтвердил
             measurement.confirmed_by_user_id = callback.from_user.id
 
-            await session.commit()
-            await session.refresh(measurement)
-
             # ВАЖНО: Обновляем счётчик round-robin только при подтверждении!
-            # Если замер был распределён через round-robin, обновляем счётчик
+            # Делаем это ДО коммита, пока сессия активна
             if measurement.delivery_zone is None or measurement.delivery_zone == "":
                 # Нет зоны доставки = использовался round-robin
                 from services.zone_service import ZoneService
                 zone_service = ZoneService(session)
                 await zone_service.update_round_robin_counter(measurement.measurer.id)
                 logger.info(f"Round-robin счётчик обновлён при подтверждении на замерщика {measurement.measurer.id}")
+
+            # ВАЖНО: Получаем уведомления ДО коммита, пока сессия активна
+            from database import get_pending_notifications_for_measurement
+            notifications_to_update = await get_pending_notifications_for_measurement(session, measurement.id)
+
+            await session.commit()
+            await session.refresh(measurement)
 
             # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Распределение подтверждено!</b>\n\n"
@@ -524,10 +531,8 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 )
                 logger.info(f"Отправлено уведомление менеджеру {measurement.manager.full_name}")
 
-            # ВАЖНО: Удаляем уведомления о подтверждении у других админов/руководителей
-            from database import get_pending_notifications_for_measurement
-            notifications = await get_pending_notifications_for_measurement(session, measurement.id)
-            for notification in notifications:
+            # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
+            for notification in notifications_to_update:
                 try:
                     # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
                     confirmed_by_name = "другим руководителем"
