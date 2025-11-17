@@ -58,11 +58,21 @@ def get_measurement_actions_keyboard(
 
     # Кнопки для администратора
     if is_admin:
-        builder.button(
-            text="🔄 Изменить замерщика",
-            callback_data=f"change_measurer:{measurement_id}"
-        )
+        # Если замер ожидает подтверждения - добавляем кнопку "Подтвердить"
+        if current_status == MeasurementStatus.PENDING_CONFIRMATION:
+            builder.button(
+                text="✅ Подтвердить распределение",
+                callback_data=f"confirm_assignment:{measurement_id}"
+            )
 
+        # Кнопка изменения замерщика доступна всегда (кроме завершенных/отмененных)
+        if current_status not in [MeasurementStatus.COMPLETED, MeasurementStatus.CANCELLED]:
+            builder.button(
+                text="🔄 Изменить замерщика",
+                callback_data=f"change_measurer:{measurement_id}"
+            )
+
+        # Кнопка отмены доступна для незавершенных замеров
         if current_status not in [MeasurementStatus.COMPLETED, MeasurementStatus.CANCELLED]:
             builder.button(
                 text="❌ Отменить замер",
