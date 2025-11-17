@@ -389,6 +389,14 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     measurement,
                     measurement.manager
                 )
+
+                # ВАЖНО: При смене уже подтверждённого замера обновляем счётчик round-robin
+                # (только если использовался round-robin)
+                if measurement.delivery_zone is None or measurement.delivery_zone == "":
+                    from services.zone_service import ZoneService
+                    zone_service = ZoneService(session)
+                    await zone_service.update_round_robin_counter(measurer.id)
+                    logger.info(f"Round-robin счётчик обновлён при смене замерщика на {measurer.id}")
             else:
                 # Замер НЕ БЫЛ подтвержден (PENDING_CONFIRMATION) - это первое назначение
                 # Старый замерщик был просто предложен системой, уведомлять его НЕ НУЖНО
@@ -402,6 +410,14 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                         measurement,
                         measurer
                     )
+
+                # ВАЖНО: При первом подтверждении обновляем счётчик round-robin
+                # (только если использовался round-robin)
+                if measurement.delivery_zone is None or measurement.delivery_zone == "":
+                    from services.zone_service import ZoneService
+                    zone_service = ZoneService(session)
+                    await zone_service.update_round_robin_counter(measurer.id)
+                    logger.info(f"Round-robin счётчик обновлён при первом назначении на замерщика {measurer.id}")
 
             await callback.answer(f"✅ Замер назначен на {measurer.full_name}")
             logger.info(f"Замер #{measurement.id} назначен на замерщика {measurer.id}")
@@ -444,6 +460,15 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
 
             await session.commit()
             await session.refresh(measurement)
+
+            # ВАЖНО: Обновляем счётчик round-robin только при подтверждении!
+            # Если замер был распределён через round-robin, обновляем счётчик
+            if measurement.delivery_zone is None or measurement.delivery_zone == "":
+                # Нет зоны доставки = использовался round-robin
+                from services.zone_service import ZoneService
+                zone_service = ZoneService(session)
+                await zone_service.update_round_robin_counter(measurement.measurer.id)
+                logger.info(f"Round-robin счётчик обновлён при подтверждении на замерщика {measurement.measurer.id}")
 
             # Обновляем сообщение
             new_text = "✅ <b>Распределение подтверждено!</b>\n\n"

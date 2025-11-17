@@ -186,9 +186,10 @@ class ZoneService:
         result = await self.session.execute(stmt)
         return list(result.scalars().unique().all())
 
-    async def get_next_measurer_round_robin(self) -> Optional[User]:
+    async def get_next_measurer_round_robin_preview(self) -> Optional[User]:
         """
-        Получить следующего замерщика для round-robin распределения
+        Получить следующего замерщика для round-robin распределения БЕЗ обновления счётчика
+        Используется для предварительного просмотра (когда замер ещё не подтверждён)
 
         Returns:
             User или None если нет доступных замерщиков
@@ -217,10 +218,11 @@ class ZoneService:
         counter = result.scalar_one_or_none()
 
         if not counter:
-            counter = RoundRobinCounter(id=1)
-            self.session.add(counter)
+            # Если счётчика нет, возвращаем первого замерщика
+            logger.info(f"Round-robin (preview) выбран первый замерщик: {measurers[0].full_name}")
+            return measurers[0]
 
-        # Находим следующего замерщика
+        # Находим следующего замерщика (БЕЗ обновления счётчика!)
         if counter.last_assigned_user_id:
             # Ищем индекс последнего назначенного замерщика
             try:
@@ -233,28 +235,70 @@ class ZoneService:
             next_idx = 0
 
         next_measurer = measurers[next_idx]
+        logger.info(f"Round-robin (preview) выбран замерщик: {next_measurer.full_name} (ID: {next_measurer.id})")
+        return next_measurer
+
+    async def update_round_robin_counter(self, measurer_id: int) -> None:
+        """
+        Обновить счётчик round-robin на конкретного замерщика
+        Вызывается ТОЛЬКО при подтверждении замера руководителем
+
+        Args:
+            measurer_id: ID замерщика, которого подтвердили
+        """
+        # Получаем или создаем счетчик
+        stmt = select(RoundRobinCounter).where(RoundRobinCounter.id == 1)
+        result = await self.session.execute(stmt)
+        counter = result.scalar_one_or_none()
+
+        if not counter:
+            counter = RoundRobinCounter(id=1)
+            self.session.add(counter)
 
         # Обновляем счетчик
-        counter.last_assigned_user_id = next_measurer.id
+        counter.last_assigned_user_id = measurer_id
         counter.last_assigned_at = datetime.now()
         await self.session.commit()
 
-        logger.info(f"Round-robin выбран замерщик: {next_measurer.full_name} (ID: {next_measurer.id})")
-        return next_measurer
+        logger.info(f"Round-robin счётчик обновлён на замерщика ID: {measurer_id}")
+
+    async def get_next_measurer_round_robin(self) -> Optional[User]:
+        """
+        Получить следующего замерщика для round-robin распределения С обновлением счётчика
+
+        ВНИМАНИЕ: Эта функция устарела и не должна использоваться!
+        Используйте get_next_measurer_round_robin_preview() вместо неё.
+
+        Returns:
+            User или None если нет доступных замерщиков
+        """
+        logger.warning("Вызвана устаревшая функция get_next_measurer_round_robin()! Используйте get_next_measurer_round_robin_preview()")
+
+        # Получаем замерщика без обновления счётчика
+        measurer = await self.get_next_measurer_round_robin_preview()
+
+        if measurer:
+            # Обновляем счётчик
+            await self.update_round_robin_counter(measurer.id)
+
+        return measurer
 
     async def assign_measurer_by_zone(self, delivery_zone: Optional[str]) -> Optional[User]:
         """
-        Назначить замерщика на основе зоны доставки
+        Назначить замерщика на основе зоны доставки (БЕЗ обновления счётчика round-robin)
+
+        Эта функция только ПРЕДЛАГАЕТ замерщика, но НЕ обновляет счётчик.
+        Счётчик обновляется только при подтверждении руководителем!
 
         Args:
             delivery_zone: Название зоны доставки из AmoCRM
 
         Returns:
-            User - назначенный замерщик
+            User - предложенный замерщик
         """
         if not delivery_zone:
-            logger.info("Зона доставки не указана, используем round-robin")
-            return await self.get_next_measurer_round_robin()
+            logger.info("Зона доставки не указана, используем round-robin (preview)")
+            return await self.get_next_measurer_round_robin_preview()
 
         # Ищем замерщиков для данной зоны
         measurers = await self.get_measurers_by_zone(delivery_zone)
@@ -266,8 +310,8 @@ class ZoneService:
             logger.info(f"Для зоны '{delivery_zone}' выбран замерщик: {selected.full_name}")
             return selected
         else:
-            logger.info(f"Для зоны '{delivery_zone}' нет назначенных замерщиков, используем round-robin")
-            return await self.get_next_measurer_round_robin()
+            logger.info(f"Для зоны '{delivery_zone}' нет назначенных замерщиков, используем round-robin (preview)")
+            return await self.get_next_measurer_round_robin_preview()
 
     async def get_unassigned_zones(self) -> List[DeliveryZone]:
         """Получить список зон, которые не назначены ни одному замерщику"""
