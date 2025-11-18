@@ -202,7 +202,11 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
 
         result = await session.execute(
             select(Measurement)
-            .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+            .options(
+                joinedload(Measurement.measurer),
+                joinedload(Measurement.manager),
+                joinedload(Measurement.confirmed_by)
+            )
             .order_by(Measurement.created_at.desc())
             .limit(20)
         )
@@ -344,7 +348,7 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                 return
 
             from sqlalchemy import select
-            from database.models import User
+            from database.models import User, Measurement
 
             result = await session.execute(select(User).where(User.id == measurer_id))
             measurer = result.scalar_one_or_none()
@@ -381,14 +385,48 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     await zone_service.update_round_robin_counter(measurer.id)
                     logger.info(f"Round-robin счётчик обновлён при смене замерщика на {measurer.id}")
 
-            # ВАЖНО: Получаем уведомления ДО коммита, пока сессия активна
-            notifications_to_update = []
+            # ВАЖНО: Сохраняем ID старого замерщика ДО коммита (для перезагрузки после коммита)
+            old_measurer_id = old_measurer.id if old_measurer else None
+
+            # Получаем уведомления для обновления ДО коммита
+            notifications_data = []
             if not was_confirmed:
                 from database import get_pending_notifications_for_measurement
-                notifications_to_update = await get_pending_notifications_for_measurement(session, measurement.id)
+                notifications = await get_pending_notifications_for_measurement(session, measurement.id)
+                # Извлекаем данные из ORM объектов ДО коммита
+                for notification in notifications:
+                    notifications_data.append({
+                        'id': notification.id,
+                        'recipient_id': notification.recipient_id,
+                        'telegram_chat_id': notification.telegram_chat_id,
+                        'telegram_message_id': notification.telegram_message_id
+                    })
 
             await session.commit()
-            await session.refresh(measurement)
+
+            # ВАЖНО: После коммита перезагружаем measurement с eager loading всех relationships
+            # чтобы избежать ошибки greenlet_spawn при вызове get_info_text()
+            from sqlalchemy.orm import joinedload
+            result = await session.execute(
+                select(Measurement)
+                .options(
+                    joinedload(Measurement.measurer),
+                    joinedload(Measurement.manager),
+                    joinedload(Measurement.confirmed_by)
+                )
+                .where(Measurement.id == measurement.id)
+            )
+            measurement = result.scalar_one()
+
+            # Перезагружаем замерщика (новый объект после коммита)
+            result = await session.execute(select(User).where(User.id == measurer_id))
+            measurer = result.scalar_one()
+
+            # Если был старый замерщик, тоже перезагружаем его
+            old_measurer_obj = None
+            if old_measurer_id:
+                result = await session.execute(select(User).where(User.id == old_measurer_id))
+                old_measurer_obj = result.scalar_one_or_none()
 
             # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Замерщик назначен!</b>\n\n"
@@ -403,12 +441,12 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
             await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
 
             # Логика уведомлений зависит от того, был ли замер подтвержден ранее
-            if was_confirmed and old_measurer and old_measurer.id != measurer.id:
+            if was_confirmed and old_measurer_obj and old_measurer_obj.id != measurer.id:
                 # Замер УЖЕ БЫЛ подтвержден - это реальная смена замерщика
                 # Отправляем уведомления через функцию смены замерщика
                 await send_measurer_change_notification(
                     callback.bot,
-                    old_measurer,
+                    old_measurer_obj,
                     measurer,
                     measurement,
                     measurement.manager
@@ -428,7 +466,7 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     )
 
                 # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
-                for notification in notifications_to_update:
+                for notif_data in notifications_data:
                     try:
                         # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
                         confirmed_by_name = "другим руководителем"
@@ -436,16 +474,16 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                             confirmed_by_name = measurement.confirmed_by.full_name
 
                         await callback.bot.edit_message_text(
-                            chat_id=notification.telegram_chat_id,
-                            message_id=notification.telegram_message_id,
+                            chat_id=notif_data['telegram_chat_id'],
+                            message_id=notif_data['telegram_message_id'],
                             text=f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
                                  f"Распределил: {confirmed_by_name}\n"
                                  f"Замерщик: {measurer.full_name}",
                             parse_mode="HTML"
                         )
-                        logger.info(f"Обновлено уведомление у пользователя {notification.recipient_id}")
+                        logger.info(f"Обновлено уведомление у пользователя {notif_data['recipient_id']}")
                     except Exception as e:
-                        logger.warning(f"Не удалось обновить уведомление {notification.id}: {e}")
+                        logger.warning(f"Не удалось обновить уведомление {notif_data['id']}: {e}")
 
             await callback.answer(f"✅ Замер назначен на {measurer.full_name}")
             logger.info(f"Замер #{measurement.id} назначен на замерщика {measurer.id}")
@@ -467,6 +505,9 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
         measurement_id = int(callback.data.split(":")[1])
 
         async for session in get_db():
+            from sqlalchemy import select
+            from database.models import Measurement
+
             measurement = await get_measurement_by_id(session, measurement_id)
 
             if not measurement:
@@ -499,11 +540,34 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 logger.info(f"Round-robin счётчик обновлён при подтверждении на замерщика {measurement.measurer.id}")
 
             # ВАЖНО: Получаем уведомления ДО коммита, пока сессия активна
+            # И сразу извлекаем нужные данные, чтобы избежать ошибки greenlet_spawn
             from database import get_pending_notifications_for_measurement
-            notifications_to_update = await get_pending_notifications_for_measurement(session, measurement.id)
+            notifications = await get_pending_notifications_for_measurement(session, measurement.id)
+            # Извлекаем данные из ORM объектов ДО коммита
+            notifications_data = []
+            for notification in notifications:
+                notifications_data.append({
+                    'id': notification.id,
+                    'recipient_id': notification.recipient_id,
+                    'telegram_chat_id': notification.telegram_chat_id,
+                    'telegram_message_id': notification.telegram_message_id
+                })
 
             await session.commit()
-            await session.refresh(measurement)
+
+            # ВАЖНО: После коммита перезагружаем measurement с eager loading всех relationships
+            # чтобы избежать ошибки greenlet_spawn при вызове get_info_text()
+            from sqlalchemy.orm import joinedload
+            result = await session.execute(
+                select(Measurement)
+                .options(
+                    joinedload(Measurement.measurer),
+                    joinedload(Measurement.manager),
+                    joinedload(Measurement.confirmed_by)
+                )
+                .where(Measurement.id == measurement.id)
+            )
+            measurement = result.scalar_one()
 
             # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Распределение подтверждено!</b>\n\n"
@@ -532,7 +596,7 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 logger.info(f"Отправлено уведомление менеджеру {measurement.manager.full_name}")
 
             # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
-            for notification in notifications_to_update:
+            for notif_data in notifications_data:
                 try:
                     # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
                     confirmed_by_name = "другим руководителем"
@@ -540,16 +604,16 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                         confirmed_by_name = measurement.confirmed_by.full_name
 
                     await callback.bot.edit_message_text(
-                        chat_id=notification.telegram_chat_id,
-                        message_id=notification.telegram_message_id,
+                        chat_id=notif_data['telegram_chat_id'],
+                        message_id=notif_data['telegram_message_id'],
                         text=f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
                              f"Подтвердил: {confirmed_by_name}\n"
                              f"Замерщик: {measurement.measurer.full_name}",
                         parse_mode="HTML"
                     )
-                    logger.info(f"Обновлено уведомление у пользователя {notification.recipient_id}")
+                    logger.info(f"Обновлено уведомление у пользователя {notif_data['recipient_id']}")
                 except Exception as e:
-                    logger.warning(f"Не удалось обновить уведомление {notification.id}: {e}")
+                    logger.warning(f"Не удалось обновить уведомление {notif_data['id']}: {e}")
 
             await callback.answer(f"✅ Распределение подтверждено. {measurement.measurer.full_name} назначен на замер")
             logger.info(f"Замер #{measurement.id} подтвержден руководителем {callback.from_user.id}, замерщик: {measurement.measurer.full_name}")
@@ -615,7 +679,11 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
 
                 result = await session.execute(
                     select(Measurement)
-                    .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+                    .options(
+                        joinedload(Measurement.measurer),
+                        joinedload(Measurement.manager),
+                        joinedload(Measurement.confirmed_by)
+                    )
                     .order_by(Measurement.created_at.desc())
                     .limit(20)
                 )

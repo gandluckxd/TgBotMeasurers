@@ -165,7 +165,11 @@ async def get_measurement_by_id(session: AsyncSession, measurement_id: int) -> M
 
     result = await session.execute(
         select(Measurement)
-        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .options(
+            joinedload(Measurement.measurer),
+            joinedload(Measurement.manager),
+            joinedload(Measurement.confirmed_by)  # Добавляем eager loading для confirmed_by
+        )
         .where(Measurement.id == measurement_id)
     )
     return result.scalar_one_or_none()
@@ -177,7 +181,11 @@ async def get_measurement_by_amocrm_id(session: AsyncSession, amocrm_lead_id: in
 
     result = await session.execute(
         select(Measurement)
-        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .options(
+            joinedload(Measurement.measurer),
+            joinedload(Measurement.manager),
+            joinedload(Measurement.confirmed_by)
+        )
         .where(Measurement.amocrm_lead_id == amocrm_lead_id)
     )
     return result.scalar_one_or_none()
@@ -193,7 +201,11 @@ async def get_measurements_by_status(
 
     query = (
         select(Measurement)
-        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .options(
+            joinedload(Measurement.measurer),
+            joinedload(Measurement.manager),
+            joinedload(Measurement.confirmed_by)
+        )
         .where(Measurement.status == status)
         .order_by(Measurement.created_at.desc())
     )
@@ -215,7 +227,11 @@ async def get_measurements_by_measurer(
 
     query = (
         select(Measurement)
-        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .options(
+            joinedload(Measurement.measurer),
+            joinedload(Measurement.manager),
+            joinedload(Measurement.confirmed_by)
+        )
         .where(Measurement.measurer_id == measurer_id)
     )
 
@@ -238,7 +254,11 @@ async def get_measurements_by_manager(
 
     query = (
         select(Measurement)
-        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .options(
+            joinedload(Measurement.measurer),
+            joinedload(Measurement.manager),
+            joinedload(Measurement.confirmed_by)
+        )
         .where(Measurement.manager_id == manager_id)
     )
 
@@ -292,11 +312,15 @@ async def create_measurement(
     session.add(measurement)
     await session.commit()
 
-    # Загружаем объект заново со всеми связями (measurer, manager)
+    # Загружаем объект заново со всеми связями (measurer, manager, confirmed_by)
     from sqlalchemy.orm import joinedload
     result = await session.execute(
         select(Measurement)
-        .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+        .options(
+            joinedload(Measurement.measurer),
+            joinedload(Measurement.manager),
+            joinedload(Measurement.confirmed_by)
+        )
         .where(Measurement.id == measurement.id)
     )
     measurement = result.scalar_one()
