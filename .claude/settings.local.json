@@ -76,7 +76,11 @@
       "Bash(iconv:*)",
       "Bash(py -c:*)",
       "Bash(git push:*)",
-      "Bash(py bot/utils/notifications.py)"
+      "Bash(py bot/utils/notifications.py)",
+      "Bash(git for-each-ref:*)",
+      "Bash(xargs:*)",
+      "Bash(git reflog expire:*)",
+      "Bash(git gc:*)"
     ],
     "deny": [],
     "ask": []
