@@ -170,8 +170,8 @@ class WebhookProcessor:
                     "responsible_user": None
                 }
 
-            lead = full_info.get("lead", {})
-            contacts = full_info.get("contacts", [])
+            lead = full_info.get("lead") or {}
+            contacts = full_info.get("contacts") or []
             responsible_user = full_info.get("responsible_user")
 
             # Извлекаем данные из сделки
@@ -192,7 +192,7 @@ class WebhookProcessor:
                 first_contact = contacts[0]
                 contact_name = first_contact.get("name")
 
-                custom_fields = first_contact.get("custom_fields_values", [])
+                custom_fields = first_contact.get("custom_fields_values") or []
                 for field in custom_fields:
                     field_code = field.get("field_code")
                     field_id = field.get("field_id")
@@ -203,7 +203,7 @@ class WebhookProcessor:
                         break
 
             # Получаем кастомные поля сделки по ID
-            lead_custom_fields = lead.get("custom_fields_values", [])
+            lead_custom_fields = lead.get("custom_fields_values") or []
 
             address = None  # Поле с ID 809475
             delivery_zone = None  # Поле с ID 808753
@@ -323,7 +323,8 @@ class WebhookProcessor:
             await send_assignment_notification_to_measurer(
                 bot=self.bot,
                 measurer=measurement.measurer,
-                measurement=measurement
+                measurement=measurement,
+                measurer_name=measurement.measurer.full_name
             )
             logger.info(f"Отправлено уведомление о назначении замерщику {measurement.measurer.full_name}")
         except Exception as e:

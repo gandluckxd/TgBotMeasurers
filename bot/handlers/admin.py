@@ -455,7 +455,7 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                 # Замер НЕ БЫЛ подтвержден (PENDING_CONFIRMATION) - это первое назначение
                 # Старый замерщик был просто предложен системой, уведомлять его НЕ НУЖНО
                 # Отправляем уведомления только новому замерщику и менеджеру
-                await send_assignment_notification_to_measurer(callback.bot, measurer, measurement)
+                await send_assignment_notification_to_measurer(callback.bot, measurer, measurement, measurer.full_name)
 
                 if measurement.manager:
                     await send_assignment_notification_to_manager(
@@ -582,7 +582,7 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
             await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
 
             # Отправляем уведомления замерщику
-            await send_assignment_notification_to_measurer(callback.bot, measurement.measurer, measurement)
+            await send_assignment_notification_to_measurer(callback.bot, measurement.measurer, measurement, measurement.measurer.full_name)
             logger.info(f"Отправлено уведомление замерщику {measurement.measurer.full_name}")
 
             # Отправляем уведомление менеджеру

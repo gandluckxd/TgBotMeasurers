@@ -269,7 +269,8 @@ async def send_new_measurement_to_admin(
 async def send_assignment_notification_to_measurer(
     bot: Bot,
     measurer: User,
-    measurement: Measurement
+    measurement: Measurement,
+    measurer_name: str = None
 ):
     """
     Отправить уведомление замерщику о назначении замера
@@ -278,12 +279,68 @@ async def send_assignment_notification_to_measurer(
         bot: Экземпляр бота
         measurer: Объект замерщика
         measurement: Объект замера
+        measurer_name: Имя замерщика (опционально, для корректного отображения)
     """
     from database import get_db, create_notification
 
     try:
         text = "📋 <b>Вам назначен новый замер!</b>\n\n"
-        text += measurement.get_info_text(detailed=True)
+        # Формируем текст вручную, чтобы избежать проблем с detached объектами
+        text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
+
+        # Основная информация
+        text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+
+        if measurement.order_number:
+            text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+        if measurement.address:
+            text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+
+        if measurement.delivery_zone:
+            text += f"🚚 <b>Зона доставки:</b> {measurement.delivery_zone}\n"
+
+        text += "\n"
+
+        # Контактные данные
+        if measurement.contact_name:
+            text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
+
+        if measurement.contact_phone:
+            text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+
+        if measurement.responsible_user_name:
+            text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+
+        text += "\n"
+
+        # Параметры окон
+        if measurement.windows_count:
+            text += f"🪟 <b>Количество окон:</b> {measurement.windows_count}\n"
+
+        if measurement.windows_area:
+            text += f"📐 <b>Площадь окон:</b> {measurement.windows_area} м²\n"
+
+        if measurement.windows_count or measurement.windows_area:
+            text += "\n"
+
+        # Статус и замерщик
+        text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
+
+        # ВАЖНО: Используем переданное имя замерщика, а не из measurement.measurer
+        # чтобы избежать проблем с detached объектами
+        if measurer_name:
+            text += f"👷 <b>Замерщик:</b> {measurer_name}\n"
+
+        # Дополнительная информация
+        from utils.timezone_utils import format_moscow_time
+        text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {measurement.amocrm_lead_id}\n"
+
+        if measurement.created_at:
+            text += f"📅 <b>Создано:</b> {format_moscow_time(measurement.created_at)}\n"
+
+        if measurement.assigned_at:
+            text += f"📅 <b>Назначено:</b> {format_moscow_time(measurement.assigned_at)}\n"
 
         # Уведомление БЕЗ кнопок
         await bot.send_message(
@@ -474,7 +531,7 @@ async def send_measurer_change_notification(
             logger.error(f"Ошибка отправки уведомления старому замерщику: {e}")
 
     # Уведомление новому замерщику
-    await send_assignment_notification_to_measurer(bot, new_measurer, measurement)
+    await send_assignment_notification_to_measurer(bot, new_measurer, measurement, new_measurer.full_name)
 
     # Уведомление менеджеру
     if manager:

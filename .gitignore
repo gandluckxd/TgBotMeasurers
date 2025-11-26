@@ -136,6 +136,11 @@ dmypy.json
 logs/
 *.log
 
+# Secrets and credentials
+credentials.json
+*.json.key
+*_credentials.json
+
 # OS
 .DS_Store
 Thumbs.db

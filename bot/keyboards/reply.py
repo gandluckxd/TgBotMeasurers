@@ -20,7 +20,7 @@ def get_admin_commands_keyboard() -> ReplyKeyboardMarkup:
     builder.row(KeyboardButton(text="🗺 Управление зонами"))
     builder.row(KeyboardButton(text="🔔 Уведомления"))
 
-    return builder.as_markup(resize_keyboard=True)
+    return builder.as_markup(resize_keyboard=True, is_persistent=True)
 
 
 def get_measurer_commands_keyboard() -> ReplyKeyboardMarkup:
@@ -39,7 +39,7 @@ def get_measurer_commands_keyboard() -> ReplyKeyboardMarkup:
         KeyboardButton(text="🔄 Мои замеры в работе")
     )
 
-    return builder.as_markup(resize_keyboard=True)
+    return builder.as_markup(resize_keyboard=True, is_persistent=True)
 
 
 def get_manager_commands_keyboard() -> ReplyKeyboardMarkup:
@@ -58,7 +58,7 @@ def get_manager_commands_keyboard() -> ReplyKeyboardMarkup:
         KeyboardButton(text="🔄 Заказы в работе")
     )
 
-    return builder.as_markup(resize_keyboard=True)
+    return builder.as_markup(resize_keyboard=True, is_persistent=True)
 
 
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
@@ -70,7 +70,7 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     """
     builder = ReplyKeyboardBuilder()
     builder.button(text="❌ Отмена")
-    return builder.as_markup(resize_keyboard=True)
+    return builder.as_markup(resize_keyboard=True, is_persistent=True)
 
 
 def get_keyboard_by_role(role: str) -> ReplyKeyboardMarkup:

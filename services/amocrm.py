@@ -152,7 +152,7 @@ class AmoCRMClient:
         if not custom_fields:
             return None
 
-        for field in custom_fields:
+        for field in (custom_fields or []):
             if field.get("field_id") == field_id:
                 values = field.get("values", [])
                 if values and len(values) > 0:

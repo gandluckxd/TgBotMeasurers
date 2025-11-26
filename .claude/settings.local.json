@@ -74,7 +74,9 @@
       "Bash(.venvScriptspython.exe check_db_migration.py)",
       "Bash(py check_db_migration.py)",
       "Bash(iconv:*)",
-      "Bash(py -c:*)"
+      "Bash(py -c:*)",
+      "Bash(git push:*)",
+      "Bash(py bot/utils/notifications.py)"
     ],
     "deny": [],
     "ask": []
