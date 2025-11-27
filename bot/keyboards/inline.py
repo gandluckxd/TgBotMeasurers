@@ -141,10 +141,10 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
 
     # Руководитель (supervisor) имеет ПОЛНОСТЬЮ такое же меню как администратор!
     if role in ["admin", "supervisor"]:
-        builder.button(text="👤 Пользователи", callback_data="users_list")
         builder.button(text="⏳ Ожидают подтверждения", callback_data="list:pending_confirmation")
-        builder.button(text="📊 Все замеры", callback_data="list:all")
         builder.button(text="🔄 Замеры в работе", callback_data="list:assigned")
+        builder.button(text="📊 Все замеры", callback_data="list:all")
+        builder.button(text="👤 Пользователи", callback_data="users_list")
         builder.button(text="🗺 Управление зонами", callback_data="manage_zones")
         builder.button(text="🔔 Уведомления", callback_data="notifications")
 

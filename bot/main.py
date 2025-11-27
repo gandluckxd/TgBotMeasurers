@@ -74,8 +74,10 @@ async def on_startup(bot: Bot):
                 text="✅ <b>Бот запущен и готов к работе!</b>",
                 parse_mode=ParseMode.HTML
             )
+            logger.info(f"Отправлено уведомление о запуске администратору {admin_id}")
         except Exception as e:
-            logger.warning(f"Не удалось отправить уведомление администратору {admin_id}: {e}")
+            logger.warning(f"Не удалось отправить уведомление администратору {admin_id}: {e}. "
+                         f"Возможно, администратор еще не начал диалог с ботом.")
 
     logger.info("Бот успешно запущен")
 
@@ -92,8 +94,10 @@ async def on_shutdown(bot: Bot):
                 text="⚠️ <b>Бот остановлен</b>",
                 parse_mode=ParseMode.HTML
             )
+            logger.info(f"Отправлено уведомление об остановке администратору {admin_id}")
         except Exception as e:
-            logger.warning(f"Не удалось отправить уведомление администратору {admin_id}: {e}")
+            logger.warning(f"Не удалось отправить уведомление администратору {admin_id}: {e}. "
+                         f"Возможно, администратор еще не начал диалог с ботом.")
 
     # Закрываем подключение к БД
     await db.close()

@@ -81,7 +81,9 @@
       "Bash(xargs:*)",
       "Bash(git reflog expire:*)",
       "Bash(git gc:*)",
-      "Bash(py test_webhook.py --help)"
+      "Bash(py test_webhook.py --help)",
+      "Bash(cat:*)",
+      "Bash(py -m py_compile:*)"
     ],
     "deny": [],
     "ask": []

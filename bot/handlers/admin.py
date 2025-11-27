@@ -100,10 +100,10 @@ async def cmd_start(message: Message, has_admin_access: bool = False):
 
         text += "📋 Используйте меню ниже для управления:\n\n"
         text += "Доступные команды:\n"
-        text += "/menu - Главное меню\n"
-        text += "/users - Пользователи\n"
-        text += "/all - Все замеры (последние 20)\n"
+        text += "/pending_confirmation - Замеры ожидающие подтверждения\n"
         text += "/pending - Замеры в работе\n"
+        text += "/all - Все замеры (последние 20)\n"
+        text += "/users - Пользователи\n"
         text += "/notifications - Уведомления\n"
 
         # Reply клавиатура с быстрыми командами
@@ -174,6 +174,35 @@ async def cmd_pending(message: Message, has_admin_access: bool = False):
             return
 
         await message.answer(f"🔄 <b>Замеры в работе ({len(measurements)}):</b>", parse_mode="HTML")
+
+        # Отправляем каждый замер отдельным сообщением с inline кнопкой
+        for measurement in measurements:
+            msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
+
+            keyboard = get_measurement_actions_keyboard(
+                measurement.id,
+                is_admin=True,
+                current_status=measurement.status
+            )
+
+            await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@admin_router.message(Command("pending_confirmation"))
+async def cmd_pending_confirmation(message: Message, has_admin_access: bool = False):
+    """Показать замеры ожидающие подтверждения (со статусом PENDING_CONFIRMATION)"""
+    if not has_admin_access and not is_admin(message.from_user.id):
+        await message.answer("⚠️ У вас нет доступа к этой команде.")
+        return
+
+    async for session in get_db():
+        measurements = await get_measurements_by_status(session, MeasurementStatus.PENDING_CONFIRMATION)
+
+        if not measurements:
+            await message.answer("✅ Нет замеров ожидающих подтверждения")
+            return
+
+        await message.answer(f"⏳ <b>Замеры ожидающие подтверждения ({len(measurements)}):</b>", parse_mode="HTML")
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
         for measurement in measurements:
@@ -466,19 +495,32 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                     )
 
                 # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
+                # Получаем имя пользователя, который распределил замер
+                confirmed_by_name = callback.from_user.full_name
+                if not confirmed_by_name:
+                    confirmed_by_name = callback.from_user.first_name or "Руководитель"
+
                 for notif_data in notifications_data:
                     try:
-                        # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
-                        confirmed_by_name = "другим руководителем"
-                        if measurement.confirmed_by:
-                            confirmed_by_name = measurement.confirmed_by.full_name
+                        # Формируем расширенный текст уведомления
+                        notification_text = f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
+
+                        # Информация о замере
+                        notification_text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+                        if measurement.order_number:
+                            notification_text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+                        notification_text += "\n"
+
+                        # Информация о распределении
+                        notification_text += f"🔄 <b>Действие:</b> Изменен замерщик\n"
+                        notification_text += f"👤 <b>Распределил:</b> {confirmed_by_name}\n"
+                        notification_text += f"👷 <b>Замерщик:</b> {measurer.full_name}\n"
 
                         await callback.bot.edit_message_text(
                             chat_id=notif_data['telegram_chat_id'],
                             message_id=notif_data['telegram_message_id'],
-                            text=f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
-                                 f"Распределил: {confirmed_by_name}\n"
-                                 f"Замерщик: {measurer.full_name}",
+                            text=notification_text,
                             parse_mode="HTML"
                         )
                         logger.info(f"Обновлено уведомление у пользователя {notif_data['recipient_id']}")
@@ -596,19 +638,32 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 logger.info(f"Отправлено уведомление менеджеру {measurement.manager.full_name}")
 
             # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
+            # Получаем имя пользователя, который подтвердил замер
+            confirmed_by_name = callback.from_user.full_name
+            if not confirmed_by_name:
+                confirmed_by_name = callback.from_user.first_name or "Руководитель"
+
             for notif_data in notifications_data:
                 try:
-                    # Редактируем сообщение, добавляя информацию о том, что замер уже распределен
-                    confirmed_by_name = "другим руководителем"
-                    if measurement.confirmed_by:
-                        confirmed_by_name = measurement.confirmed_by.full_name
+                    # Формируем расширенный текст уведомления
+                    notification_text = f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
+
+                    # Информация о замере
+                    notification_text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+                    if measurement.order_number:
+                        notification_text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+                    notification_text += "\n"
+
+                    # Информация о распределении
+                    notification_text += f"✅ <b>Действие:</b> Подтверждено автоматическое распределение\n"
+                    notification_text += f"👤 <b>Подтвердил:</b> {confirmed_by_name}\n"
+                    notification_text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
 
                     await callback.bot.edit_message_text(
                         chat_id=notif_data['telegram_chat_id'],
                         message_id=notif_data['telegram_message_id'],
-                        text=f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
-                             f"Подтвердил: {confirmed_by_name}\n"
-                             f"Замерщик: {measurement.measurer.full_name}",
+                        text=notification_text,
                         parse_mode="HTML"
                     )
                     logger.info(f"Обновлено уведомление у пользователя {notif_data['recipient_id']}")
@@ -776,6 +831,14 @@ async def handle_all_button(message: Message, has_admin_access: bool = False):
     if not has_admin_access and not is_admin(message.from_user.id):
         return
     await cmd_all(message, has_admin_access=has_admin_access)
+
+
+@admin_router.message(F.text == "⏳ Ожидают подтверждения")
+async def handle_pending_confirmation_button(message: Message, has_admin_access: bool = False):
+    """Обработка нажатия кнопки Ожидают подтверждения"""
+    if not has_admin_access and not is_admin(message.from_user.id):
+        return
+    await cmd_pending_confirmation(message, has_admin_access=has_admin_access)
 
 
 @admin_router.message(F.text == "🗺 Управление зонами")

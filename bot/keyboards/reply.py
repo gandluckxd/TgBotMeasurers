@@ -14,9 +14,10 @@ def get_admin_commands_keyboard() -> ReplyKeyboardMarkup:
 
     # Все кнопки по одной в строке
     builder.row(KeyboardButton(text="📋 Главное меню"))
-    builder.row(KeyboardButton(text="👤 Пользователи"))
-    builder.row(KeyboardButton(text="📊 Все замеры"))
+    builder.row(KeyboardButton(text="⏳ Ожидают подтверждения"))
     builder.row(KeyboardButton(text="🔄 Замеры в работе"))
+    builder.row(KeyboardButton(text="📊 Все замеры"))
+    builder.row(KeyboardButton(text="👤 Пользователи"))
     builder.row(KeyboardButton(text="🗺 Управление зонами"))
     builder.row(KeyboardButton(text="🔔 Уведомления"))
 
