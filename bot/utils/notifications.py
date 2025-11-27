@@ -397,14 +397,64 @@ async def send_assignment_notification_to_manager(
         measurer: Объект назначенного замерщика
     """
     from database import get_db, create_notification
+    from utils.timezone_utils import format_moscow_time
 
     try:
         text = "✅ <b>Замерщик назначен на ваш заказ</b>\n\n"
-        text += f"📋 <b>Замер #{measurement.id}</b>\n"
-        text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
-        text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n"
+        text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
+
+        # === БЛОК 1: Основная информация о заказе ===
+        text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+
+        if measurement.order_number:
+            text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+        if measurement.address:
+            text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+        else:
+            text += f"📍 <b>Адрес:</b> Не указан\n"
+
+        if measurement.delivery_zone:
+            text += f"🚚 <b>Зона доставки:</b> {measurement.delivery_zone}\n"
+
+        text += "\n"
+
+        # === БЛОК 2: Контактные данные ===
+        if measurement.contact_name:
+            text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
+        else:
+            text += f"👤 <b>Контакт:</b> Не указан\n"
+
+        if measurement.contact_phone:
+            text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+
+        text += "\n"
+
+        # === БЛОК 3: Параметры окон (если есть) ===
+        has_window_info = False
+        if measurement.windows_count:
+            text += f"🪟 <b>Количество окон:</b> {measurement.windows_count}\n"
+            has_window_info = True
+
+        if measurement.windows_area:
+            text += f"📐 <b>Площадь окон:</b> {measurement.windows_area} м²\n"
+            has_window_info = True
+
+        if has_window_info:
+            text += "\n"
+
+        # === БЛОК 4: Назначение и статус ===
         text += f"👷 <b>Замерщик:</b> {measurer.full_name}\n"
         text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
+
+        # === БЛОК 5: Временные метки ===
+        text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {measurement.amocrm_lead_id}\n"
+
+        if measurement.created_at:
+            text += f"📅 <b>Создано:</b> {format_moscow_time(measurement.created_at)}\n"
+
+        if measurement.assigned_at:
+            text += f"📅 <b>Назначено:</b> {format_moscow_time(measurement.assigned_at)}\n"
 
         await bot.send_message(
             chat_id=manager.telegram_id,
@@ -536,15 +586,64 @@ async def send_measurer_change_notification(
     # Уведомление менеджеру
     if manager:
         try:
+            from utils.timezone_utils import format_moscow_time
+
             text = "🔄 <b>Изменен замерщик на вашем заказе</b>\n\n"
-            text += f"📋 <b>Замер #{measurement.id}</b>\n"
-            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
-            text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n\n"
+            text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
 
+            # === БЛОК 1: Основная информация о заказе ===
+            text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+
+            if measurement.order_number:
+                text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+            if measurement.address:
+                text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+            else:
+                text += f"📍 <b>Адрес:</b> Не указан\n"
+
+            if measurement.delivery_zone:
+                text += f"🚚 <b>Зона доставки:</b> {measurement.delivery_zone}\n"
+
+            text += "\n"
+
+            # === БЛОК 2: Контактные данные ===
+            if measurement.contact_name:
+                text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
+            else:
+                text += f"👤 <b>Контакт:</b> Не указан\n"
+
+            if measurement.contact_phone:
+                text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+
+            text += "\n"
+
+            # === БЛОК 3: Параметры окон (если есть) ===
+            has_window_info = False
+            if measurement.windows_count:
+                text += f"🪟 <b>Количество окон:</b> {measurement.windows_count}\n"
+                has_window_info = True
+
+            if measurement.windows_area:
+                text += f"📐 <b>Площадь окон:</b> {measurement.windows_area} м²\n"
+                has_window_info = True
+
+            if has_window_info:
+                text += "\n"
+
+            # === БЛОК 4: Изменение замерщика ===
+            text += "⚠️ <b>ИЗМЕНЕНИЕ ЗАМЕРЩИКА:</b>\n"
             if old_measurer:
-                text += f"<b>Старый замерщик:</b> {old_measurer.full_name}\n"
+                text += f"   ❌ Старый: {old_measurer.full_name}\n"
 
-            text += f"<b>Новый замерщик:</b> {new_measurer.full_name}\n"
+            text += f"   ✅ Новый: {new_measurer.full_name}\n"
+            text += f"\n📊 <b>Статус:</b> {measurement.status_text}\n"
+
+            # === БЛОК 5: Дополнительная информация ===
+            text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {measurement.amocrm_lead_id}\n"
+
+            if measurement.created_at:
+                text += f"📅 <b>Создано:</b> {format_moscow_time(measurement.created_at)}\n"
 
             await bot.send_message(
                 chat_id=manager.telegram_id,
@@ -580,19 +679,72 @@ async def send_completion_notification(
         manager: Менеджер (если есть)
     """
     from database import get_db, create_notification, get_all_admins, get_all_supervisors
+    from utils.timezone_utils import format_moscow_time
 
-    # Формируем текст уведомления
+    # Формируем развернутое текст уведомления
     text = "✅ <b>Замер выполнен!</b>\n\n"
-    text += f"📋 <b>Замер #{measurement.id}</b>\n"
-    text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
-    text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n"
+    text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
 
+    # === БЛОК 1: Основная информация о заказе ===
+    text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+
+    if measurement.order_number:
+        text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+    if measurement.address:
+        text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+    else:
+        text += f"📍 <b>Адрес:</b> Не указан\n"
+
+    if measurement.delivery_zone:
+        text += f"🚚 <b>Зона доставки:</b> {measurement.delivery_zone}\n"
+
+    text += "\n"
+
+    # === БЛОК 2: Контактные данные ===
+    if measurement.contact_name:
+        text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
+    else:
+        text += f"👤 <b>Контакт:</b> Не указан\n"
+
+    if measurement.contact_phone:
+        text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+
+    if measurement.responsible_user_name:
+        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+
+    text += "\n"
+
+    # === БЛОК 3: Параметры окон (если есть) ===
+    has_window_info = False
+    if measurement.windows_count:
+        text += f"🪟 <b>Количество окон:</b> {measurement.windows_count}\n"
+        has_window_info = True
+
+    if measurement.windows_area:
+        text += f"📐 <b>Площадь окон:</b> {measurement.windows_area} м²\n"
+        has_window_info = True
+
+    if has_window_info:
+        text += "\n"
+
+    # === БЛОК 4: Результат выполнения ===
     if measurement.measurer:
         text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
 
+    text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
+
+    # === БЛОК 5: Временные метки ===
+    text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {measurement.amocrm_lead_id}\n"
+
+    if measurement.created_at:
+        text += f"📅 <b>Создано:</b> {format_moscow_time(measurement.created_at)}\n"
+
+    if measurement.assigned_at:
+        text += f"📅 <b>Назначено:</b> {format_moscow_time(measurement.assigned_at)}\n"
+
     if measurement.completed_at:
-        from utils.timezone_utils import format_moscow_time
-        text += f"📅 <b>Завершено:</b> {format_moscow_time(measurement.completed_at)}\n"
+        text += f"✅ <b>Завершено:</b> {format_moscow_time(measurement.completed_at)}\n"
 
     logger.info(f"Начало отправки уведомлений о завершении замера #{measurement.id}")
 
