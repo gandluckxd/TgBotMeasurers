@@ -10,6 +10,7 @@ from database.models import Measurement, User
 from database.database import db
 from config import settings
 from loguru import logger
+from utils.timezone_utils import format_moscow_time, moscow_now
 
 
 class GoogleSheetsExporter:
@@ -120,7 +121,7 @@ class GoogleSheetsExporter:
                 worksheet = self.spreadsheet.add_worksheet(title="Замеры", rows=1000, cols=20)
 
             # Время последнего обновления
-            last_update_time = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
+            last_update_time = format_moscow_time(moscow_now(), '%d.%m.%Y %H:%M:%S')
 
             # Строка 1 - время обновления
             worksheet.update_acell('A1', f'Последнее обновление: {last_update_time}')

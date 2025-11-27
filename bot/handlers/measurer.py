@@ -15,6 +15,7 @@ from database import (
     MeasurementStatus,
     UserRole
 )
+from utils.timezone_utils import moscow_now
 from bot.keyboards.inline import (
     get_main_menu_keyboard,
     get_measurement_actions_keyboard,
@@ -155,7 +156,7 @@ async def handle_status_change(callback: CallbackQuery):
 
             # Обновляем временные метки
             if new_status == MeasurementStatus.COMPLETED:
-                measurement.completed_at = datetime.now()
+                measurement.completed_at = moscow_now()
 
             await session.commit()
             await session.refresh(measurement)

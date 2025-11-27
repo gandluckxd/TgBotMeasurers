@@ -21,6 +21,7 @@ from database import (
     MeasurementStatus,
     UserRole
 )
+from utils.timezone_utils import moscow_now
 from bot.keyboards.inline import (
     get_measurers_keyboard,
     get_main_menu_keyboard,
@@ -394,7 +395,7 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
             # Назначаем замерщика и ставим статус "Назначен"
             measurement.measurer_id = measurer.id
             measurement.status = MeasurementStatus.ASSIGNED
-            measurement.assigned_at = datetime.now()
+            measurement.assigned_at = moscow_now()
 
             # Сохраняем кто подтвердил/распределил
             measurement.confirmed_by_user_id = callback.from_user.id
@@ -567,7 +568,7 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
 
             # Подтверждаем назначение
             measurement.status = MeasurementStatus.ASSIGNED
-            measurement.assigned_at = datetime.now()
+            measurement.assigned_at = moscow_now()
 
             # Сохраняем кто подтвердил
             measurement.confirmed_by_user_id = callback.from_user.id

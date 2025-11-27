@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from loguru import logger
 
 from database.models import DeliveryZone, MeasurerZone, User, UserRole, RoundRobinCounter
+from utils.timezone_utils import moscow_now
 
 
 class ZoneService:
@@ -257,7 +258,7 @@ class ZoneService:
 
         # Обновляем счетчик
         counter.last_assigned_user_id = measurer_id
-        counter.last_assigned_at = datetime.now()
+        counter.last_assigned_at = moscow_now()
         await self.session.commit()
 
         logger.info(f"Round-robin счётчик обновлён на замерщика ID: {measurer_id}")

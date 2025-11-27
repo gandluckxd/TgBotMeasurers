@@ -60,3 +60,13 @@ def timestamp_to_moscow_time(timestamp: Optional[int]) -> Optional[datetime]:
 
     utc_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
     return utc_dt.astimezone(MOSCOW_TZ)
+
+
+def moscow_now() -> datetime:
+    """
+    Получить текущее время в московском часовом поясе (UTC+3)
+
+    Returns:
+        Datetime объект с текущим московским временем
+    """
+    return datetime.now(MOSCOW_TZ)

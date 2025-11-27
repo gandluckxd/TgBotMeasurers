@@ -6,6 +6,7 @@ from loguru import logger
 
 from config_exporter import settings
 from services.sheets_export import export_to_google_sheets
+from utils.timezone_utils import format_moscow_time, moscow_now
 
 
 async def periodic_export():
@@ -15,7 +16,7 @@ async def periodic_export():
 
     while True:
         try:
-            logger.info(f"Начало экспорта данных: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
+            logger.info(f"Начало экспорта данных: {format_moscow_time(moscow_now(), '%d.%m.%Y %H:%M:%S')}")
 
             # Выполняем экспорт
             await export_to_google_sheets()

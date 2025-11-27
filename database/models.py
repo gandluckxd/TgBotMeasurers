@@ -9,6 +9,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
+from utils.timezone_utils import moscow_now
+
 
 class Base(DeclarativeBase):
     """Базовый класс для всех моделей"""
@@ -305,7 +307,7 @@ class InviteLink(Base):
             return False
 
         # Проверка срока действия
-        if self.expires_at and datetime.now() > self.expires_at:
+        if self.expires_at and moscow_now() > self.expires_at:
             return False
 
         # Проверка лимита использований
