@@ -61,7 +61,12 @@ class GoogleSheetsExporter:
             # Получаем все замеры с связанными данными
             query = (
                 select(Measurement)
-                .options(joinedload(Measurement.measurer), joinedload(Measurement.manager))
+                .options(
+                    joinedload(Measurement.measurer),
+                    joinedload(Measurement.manager),
+                    joinedload(Measurement.auto_assigned_measurer),
+                    joinedload(Measurement.confirmed_by)
+                )
                 .order_by(Measurement.created_at.desc())
             )
             result = await session.execute(query)
@@ -80,6 +85,24 @@ class GoogleSheetsExporter:
                 windows_count = m.windows_count or "—"
                 windows_area = m.windows_area or "—"
 
+                # Новые поля для автоматического распределения
+                auto_assigned_measurer_name = m.auto_assigned_measurer.full_name if m.auto_assigned_measurer else "—"
+
+                # Основание автоматического распределения
+                assignment_reason_map = {
+                    'dealer': 'Привязанный замерщик',
+                    'zone': 'Зона доставки',
+                    'round_robin': 'По очереди',
+                    'none': 'Не распределено'
+                }
+                assignment_reason = assignment_reason_map.get(m.assignment_reason, "—")
+
+                # Кто распределил
+                assigned_by = m.confirmed_by.full_name if m.confirmed_by else "—"
+
+                # Итоговый замерщик
+                final_measurer = m.measurer.full_name if m.measurer else "Не назначен"
+
                 # Стоимость из названия сделки (если есть)
                 # Предполагаем, что стоимость может быть в названии сделки
                 cost = "—"  # По умолчанию
@@ -89,17 +112,20 @@ class GoogleSheetsExporter:
                 completed_date = m.completed_at.strftime('%d.%m.%Y %H:%M') if m.completed_at else "—"
 
                 row = [
-                    m.order_number or "—",  # Номер заказа
-                    measurer_name,          # Замерщик
-                    contact_name,           # Контакт
-                    manager_name,           # Менеджер
-                    zone,                   # Зона
-                    address,                # Адрес
-                    windows_count,          # Количество окон
-                    windows_area,           # Площадь окон
-                    cost,                   # Стоимость
-                    assigned_date,          # Дата назначения
-                    completed_date          # Дата выполнения
+                    m.order_number or "—",         # Номер заказа
+                    contact_name,                  # Контакт
+                    manager_name,                  # Менеджер
+                    zone,                          # Зона
+                    address,                       # Адрес
+                    windows_count,                 # Количество окон
+                    windows_area,                  # Площадь окон
+                    cost,                          # Стоимость
+                    auto_assigned_measurer_name,   # Автоматически распределенный замерщик
+                    assignment_reason,             # Основание автоматического распределения
+                    assigned_by,                   # Кто распределил
+                    final_measurer,                # Итоговый замерщик
+                    assigned_date,                 # Дата назначения
+                    completed_date                 # Дата выполнения
                 ]
                 data.append(row)
 
@@ -125,7 +151,7 @@ class GoogleSheetsExporter:
 
             # Строка 1 - время обновления
             worksheet.update_acell('A1', f'Последнее обновление: {last_update_time}')
-            worksheet.format('A1:K1', {
+            worksheet.format('A1:N1', {
                 "textFormat": {"italic": True, "fontSize": 10}
             })
 
@@ -134,7 +160,6 @@ class GoogleSheetsExporter:
             if not current_headers or current_headers[0] != "Номер заказа":
                 headers = [
                     "Номер заказа",
-                    "Замерщик",
                     "Контакт",
                     "Менеджер",
                     "Зона",
@@ -142,21 +167,25 @@ class GoogleSheetsExporter:
                     "Количество окон",
                     "Площадь окон",
                     "Стоимость",
+                    "Автоматически распределенный замерщик",
+                    "Основание автоматического распределения",
+                    "Кто распределил",
+                    "Итоговый замерщик",
                     "Дата назначения замера",
                     "Дата выполнения замера"
                 ]
-                worksheet.update('A2:K2', [headers], value_input_option='USER_ENTERED')
+                worksheet.update('A2:N2', [headers], value_input_option='USER_ENTERED')
 
             # Очищаем старые данные начиная с 3-й строки
             all_values = worksheet.get_all_values()
             if len(all_values) > 2:
                 last_row = len(all_values)
-                worksheet.batch_clear([f'A3:K{last_row}'])
+                worksheet.batch_clear([f'A3:N{last_row}'])
 
             # Записываем данные начиная с A3
             if data:
                 end_row = 2 + len(data)  # 2 (заголовки) + количество строк данных
-                range_notation = f'A3:K{end_row}'
+                range_notation = f'A3:N{end_row}'
                 worksheet.update(range_notation, data, value_input_option='USER_ENTERED')
 
             logger.info(f"Данные успешно обновлены в Google Sheets. Записано строк: {len(data)}")

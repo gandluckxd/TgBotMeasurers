@@ -302,6 +302,13 @@ def get_user_detail_keyboard(user_id: int, current_role: str, is_active: bool) -
         callback_data=f"user_amocrm:{user_id}"
     )
 
+    # Кнопка изменения имени замерщика (только для замерщиков)
+    if current_role == "measurer":
+        builder.button(
+            text="👷 Изменить имя замерщика",
+            callback_data=f"user_set_measurer_name:{user_id}"
+        )
+
     # Кнопка активации/деактивации
     if is_active:
         builder.button(
@@ -879,6 +886,177 @@ def get_amocrm_users_keyboard(user_id: int, amocrm_users: List[dict], page: int 
         InlineKeyboardButton(
             text="❌ Отмена",
             callback_data=f"user_amocrm:{user_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+# ============ MEASURER NAMES KEYBOARDS ============
+
+def get_measurer_names_menu_keyboard() -> InlineKeyboardMarkup:
+    """Создать меню управления именами замерщиков"""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="📋 Все имена",
+            callback_data="view_all_measurer_names"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить имя",
+            callback_data="add_measurer_name"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="👥 Замерщики и их имена",
+            callback_data="view_measurer_assignments"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="⚠️ Не привязанные имена",
+            callback_data="view_unassigned_names"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 К пользователям",
+            callback_data="users_list"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_measurer_names_list_keyboard(names) -> InlineKeyboardMarkup:
+    """Создать клавиатуру со списком имен замерщиков"""
+    builder = InlineKeyboardBuilder()
+
+    for name in names:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🏢 {name.name}",
+                callback_data=f"view_measurer_name:{name.id}"
+            ),
+            InlineKeyboardButton(
+                text="🗑",
+                callback_data=f"delete_measurer_name:{name.id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить имя",
+            callback_data="add_measurer_name"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="manage_measurer_names"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_measurer_name_detail_keyboard(name_id: int, is_assigned: bool) -> InlineKeyboardMarkup:
+    """Создать клавиатуру для детальной информации об имени замерщика"""
+    builder = InlineKeyboardBuilder()
+
+    if is_assigned:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔓 Отвязать",
+                callback_data=f"unassign_name:{name_id}"
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔗 Привязать к замерщику",
+                callback_data=f"assign_name_to_measurer:{name_id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑 Удалить имя",
+            callback_data=f"delete_measurer_name:{name_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 К списку имен",
+            callback_data="view_all_measurer_names"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_measurers_for_name_keyboard(measurers, name_id: int) -> InlineKeyboardMarkup:
+    """Создать клавиатуру для выбора замерщика для привязки имени"""
+    builder = InlineKeyboardBuilder()
+
+    for measurer in measurers:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👤 {measurer.full_name}",
+                callback_data=f"assign_name_measurer:{measurer.id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data=f"view_measurer_name:{name_id}"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_names_for_measurer_keyboard(names, measurer_id: int) -> InlineKeyboardMarkup:
+    """Создать клавиатуру для выбора имени для привязки к замерщику"""
+    builder = InlineKeyboardBuilder()
+
+    for name in names:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🏢 {name.name}",
+                callback_data=f"assign_measurer_name:{name.id}"
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data="manage_measurer_names"
+        )
+    )
+
+    return builder.as_markup()
+
+
+def get_measurer_assigned_names_keyboard(measurer_id: int) -> InlineKeyboardMarkup:
+    """Создать клавиатуру для просмотра привязанных имен замерщика"""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить имя",
+            callback_data=f"add_name_to_measurer:{measurer_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="view_measurer_assignments"
         )
     )
 

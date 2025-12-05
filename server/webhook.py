@@ -173,9 +173,21 @@ class WebhookProcessor:
             lead = full_info.get("lead") or {}
             contacts = full_info.get("contacts") or []
             responsible_user = full_info.get("responsible_user")
+            company = full_info.get("company")
+            company_measurer_field = full_info.get("company_measurer_field")
 
             # Извлекаем данные из сделки
             lead_name = lead.get("name", "Неизвестная сделка")
+
+            # Получаем название компании, если есть
+            company_name = company.get("name") if company else None
+
+            # Логируем информацию о компании для отладки
+            if company:
+                logger.info(f"Компания найдена: {company_name}")
+                logger.info(f"Поле 'Замерщик' компании: {company_measurer_field}")
+            else:
+                logger.info("Компания не привязана к сделке")
 
             # Получаем имя и ID ответственного пользователя из AmoCRM
             responsible_user_name = None
@@ -246,7 +258,7 @@ class WebhookProcessor:
                     else:
                         logger.warning(f"Менеджер с AmoCRM ID {responsible_user_id} не найден в базе")
 
-                # Создаем новый замер
+                # Создаем новый замер с автоматическим распределением
                 measurement = await create_measurement(
                     session=session,
                     amocrm_lead_id=lead_id,
@@ -259,10 +271,17 @@ class WebhookProcessor:
                     order_number=order_number,
                     windows_count=windows_count,
                     windows_area=windows_area,
-                    manager_id=manager_id
+                    manager_id=manager_id,
+                    # Новые параметры для dealer assignment
+                    dealer_company_name=company_name,
+                    dealer_field_value=company_measurer_field
                 )
 
-                logger.info(f"Создан замер #{measurement.id} для сделки {lead_id}")
+                logger.info(
+                    f"Создан замер #{measurement.id} для сделки {lead_id}. "
+                    f"Автораспределение: {measurement.assignment_reason or 'none'}, "
+                    f"Предложенный замерщик: {measurement.auto_assigned_measurer.full_name if measurement.auto_assigned_measurer else 'Не назначен'}"
+                )
 
                 # Отправляем уведомления только администраторам и руководителям для подтверждения
                 if self.bot:

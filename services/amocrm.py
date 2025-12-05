@@ -213,9 +213,65 @@ class AmoCRMClient:
 
         return result
 
+    async def get_company(self, company_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получить информацию о компании
+
+        Args:
+            company_id: ID компании
+
+        Returns:
+            Данные компании или None
+        """
+        result = await self._make_request(
+            method="GET",
+            endpoint=f"companies/{company_id}"
+        )
+
+        return result
+
+    async def get_lead_with_company(self, lead_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получить информацию о сделке вместе с компанией
+
+        Args:
+            lead_id: ID сделки
+
+        Returns:
+            Данные сделки со встроенной информацией о компании или None
+        """
+        result = await self._make_request(
+            method="GET",
+            endpoint=f"leads/{lead_id}",
+            params={"with": "contacts,companies"}
+        )
+
+        if result and "_embedded" in result:
+            leads = result["_embedded"].get("leads", [])
+            if leads:
+                return leads[0]
+
+        return result
+
+    def extract_company_measurer_field(self, company: Optional[Dict[str, Any]]) -> Optional[str]:
+        """
+        Извлечь значение поля "Замерщик" из компании (field_id: 809619)
+
+        Args:
+            company: Данные компании из AmoCRM
+
+        Returns:
+            Значение поля "Замерщик" или None
+        """
+        if not company:
+            return None
+
+        custom_fields = company.get("custom_fields_values", [])
+        return self.extract_custom_field_value(custom_fields, field_id=809619)
+
     async def get_lead_full_info(self, lead_id: int) -> Optional[Dict[str, Any]]:
         """
-        Получить полную информацию о сделке включая контакты
+        Получить полную информацию о сделке включая контакты и компанию
 
         Args:
             lead_id: ID сделки
@@ -223,7 +279,8 @@ class AmoCRMClient:
         Returns:
             Полная информация о сделке
         """
-        lead = await self.get_lead(lead_id)
+        # Используем новый метод для получения сделки с компанией
+        lead = await self.get_lead_with_company(lead_id)
 
         if not lead:
             return None
@@ -238,10 +295,36 @@ class AmoCRMClient:
         if responsible_user_id:
             responsible_user = await self.get_user(responsible_user_id)
 
+        # Извлекаем компанию из _embedded, если есть
+        company = None
+        company_measurer_field = None
+
+        if "_embedded" in lead and "companies" in lead["_embedded"]:
+            companies = lead["_embedded"]["companies"]
+            if companies and len(companies) > 0:
+                company_basic = companies[0]
+                company_id = company_basic.get("id")
+                logger.info(f"Найдена компания ID {company_id}: {company_basic.get('name')}")
+
+                # Получаем полную информацию о компании с кастомными полями
+                if company_id:
+                    company = await self.get_company(company_id)
+                    if company:
+                        logger.info(f"Получена полная информация о компании: {company.get('name')}")
+                        logger.info(f"Custom fields компании: {company.get('custom_fields_values', [])}")
+                        # Извлекаем поле "Замерщик" из компании
+                        company_measurer_field = self.extract_company_measurer_field(company)
+                        logger.info(f"Извлечено значение поля 'Замерщик' (809619): {company_measurer_field}")
+                    else:
+                        logger.warning(f"Не удалось получить полную информацию о компании {company_id}")
+                        company = company_basic
+
         return {
             "lead": lead,
             "contacts": contacts,
-            "responsible_user": responsible_user
+            "responsible_user": responsible_user,
+            "company": company,
+            "company_measurer_field": company_measurer_field
         }
 
     async def get_all_users(self) -> list[Dict[str, Any]]:

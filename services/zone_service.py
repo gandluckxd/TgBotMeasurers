@@ -344,3 +344,75 @@ class ZoneService:
 
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def assign_measurer_with_priority(
+        self,
+        delivery_zone: Optional[str],
+        measurer_field_value: Optional[str],
+        company_name: Optional[str] = None
+    ) -> tuple[Optional[User], str, Optional[str]]:
+        """
+        Назначить замерщика с учётом 3-уровневой приоритетности
+
+        Priority 1: Dealer assignment (measurer_field_value from company)
+        Priority 2: Zone assignment (delivery_zone)
+        Priority 3: Round-robin
+
+        Args:
+            delivery_zone: Зона доставки из AmoCRM
+            measurer_field_value: Значение поля "Замерщик" из компании
+            company_name: Название компании (опционально, для логирования)
+
+        Returns:
+            Tuple of (User, assignment_reason, additional_info)
+            - User: Назначенный замерщик или None
+            - assignment_reason: 'dealer' | 'zone' | 'round_robin' | 'none'
+            - additional_info: Дополнительная информация (имя дилера или зоны)
+        """
+        from services.measurer_name_service import MeasurerNameService
+
+        measurer_service = MeasurerNameService(self.session)
+
+        # PRIORITY 1: Dealer Assignment
+        if measurer_field_value:
+            logger.info(f"Проверяем dealer assignment для значения: {measurer_field_value}")
+            measurer = await measurer_service.get_user_by_measurer_name(measurer_field_value)
+
+            if measurer:
+                logger.info(
+                    f"Dealer assignment: замерщик {measurer.full_name} "
+                    f"назначен через дилера '{measurer_field_value}'"
+                    + (f" (компания: {company_name})" if company_name else "")
+                )
+                return measurer, 'dealer', measurer_field_value
+            else:
+                logger.warning(
+                    f"Dealer assignment не удался: замерщик для '{measurer_field_value}' не найден"
+                )
+
+        # PRIORITY 2: Zone Assignment
+        if delivery_zone:
+            logger.info(f"Проверяем zone assignment для зоны: {delivery_zone}")
+            measurers = await self.get_measurers_by_zone(delivery_zone)
+
+            if measurers:
+                # If multiple measurers for zone, pick first (can enhance later)
+                selected = measurers[0]
+                logger.info(
+                    f"Zone assignment: замерщик {selected.full_name} "
+                    f"назначен через зону '{delivery_zone}'"
+                )
+                return selected, 'zone', delivery_zone
+            else:
+                logger.info(f"Zone assignment не удался: для зоны '{delivery_zone}' нет замерщиков")
+
+        # PRIORITY 3: Round-Robin
+        logger.info("Используем round-robin распределение")
+        measurer = await self.get_next_measurer_round_robin_preview()
+
+        if measurer:
+            logger.info(f"Round-robin: выбран замерщик {measurer.full_name}")
+            return measurer, 'round_robin', None
+        else:
+            logger.error("Нет доступных замерщиков для назначения!")
+            return None, 'none', None

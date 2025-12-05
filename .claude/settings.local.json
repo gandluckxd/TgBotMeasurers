@@ -83,7 +83,8 @@
       "Bash(git gc:*)",
       "Bash(py test_webhook.py --help)",
       "Bash(cat:*)",
-      "Bash(py -m py_compile:*)"
+      "Bash(py -m py_compile:*)",
+      "Bash(py migrations/apply_dealer_migration.py)"
     ],
     "deny": [],
     "ask": []

@@ -207,8 +207,9 @@ async def send_new_measurement_to_admin(
         text = "🆕 <b>Новый замер - требуется подтверждение!</b>\n\n"
         text += measurement.get_info_text(detailed=True, show_admin_info=True)
 
-        if measurement.measurer:
-            text += f"\n⚡️ <b>Автоматически распределен на:</b> {measurement.measurer.full_name}\n"
+        # Проверяем auto_assigned_measurer (предложенный системой)
+        if measurement.auto_assigned_measurer:
+            text += f"\n⚡️ <b>Система предлагает:</b> {measurement.auto_assigned_measurer.full_name}\n"
             text += "\n❓ <b>Подтвердите распределение или выберите другого замерщика:</b>"
         else:
             text += "\n⚠️ <b>Замерщик не был назначен автоматически</b>\n"
@@ -217,18 +218,18 @@ async def send_new_measurement_to_admin(
         # Создаем клавиатуру с кнопками подтверждения и изменения
         builder = InlineKeyboardBuilder()
 
-        if measurement.measurer:
-            # Замерщик был назначен - даем кнопки подтверждения и изменения
+        if measurement.auto_assigned_measurer:
+            # Замерщик был предложен - даем кнопки подтверждения и изменения
             builder.button(
-                text="✅ Подтвердить распределение",
+                text="✅ Подтвердить предложенного",
                 callback_data=f"confirm_assignment:{measurement.id}"
             )
             builder.button(
-                text="🔄 Изменить замерщика",
+                text="🔄 Выбрать другого",
                 callback_data=f"change_measurer:{measurement.id}"
             )
         else:
-            # Замерщик не был назначен - только кнопка выбора
+            # Замерщик не был предложен - только кнопка выбора
             builder.button(
                 text="👷 Назначить замерщика",
                 callback_data=f"change_measurer:{measurement.id}"
@@ -385,7 +386,7 @@ async def send_assignment_notification_to_manager(
     bot: Bot,
     manager: User,
     measurement: Measurement,
-    measurer: User
+    measurer: User | None
 ):
     """
     Отправить уведомление менеджеру о назначении замерщика
@@ -394,12 +395,16 @@ async def send_assignment_notification_to_manager(
         bot: Экземпляр бота
         manager: Объект менеджера
         measurement: Объект замера
-        measurer: Объект назначенного замерщика
+        measurer: Объект назначенного замерщика (может быть None)
     """
     from database import get_db, create_notification
     from utils.timezone_utils import format_moscow_time
 
     try:
+        # Проверяем, что замерщик назначен
+        if not measurer:
+            logger.warning(f"Попытка отправить уведомление менеджеру без замерщика для замера #{measurement.id}")
+            return
         text = "✅ <b>Замерщик назначен на ваш заказ</b>\n\n"
         text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
 
@@ -514,8 +519,8 @@ async def send_status_change_notification(
     try:
         text = "🔄 <b>Изменен статус замера</b>\n\n"
         text += f"📋 <b>Замер #{measurement.id}</b>\n"
-        text += f"👤 <b>Клиент:</b> {measurement.client_name}\n"
-        text += f"📍 <b>Адрес:</b> {measurement.address}\n\n"
+        text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
+        text += f"📍 <b>Адрес:</b> {measurement.address or 'Не указан'}\n\n"
         text += f"<b>Старый статус:</b> {old_status}\n"
         text += f"<b>Новый статус:</b> {new_status}\n"
 

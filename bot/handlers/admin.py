@@ -235,9 +235,10 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
             .options(
                 joinedload(Measurement.measurer),
                 joinedload(Measurement.manager),
-                joinedload(Measurement.confirmed_by)
+                joinedload(Measurement.confirmed_by),
+                joinedload(Measurement.auto_assigned_measurer)
             )
-            .order_by(Measurement.created_at.desc())
+            .order_by(Measurement.created_at.asc())
             .limit(20)
         )
         measurements = list(result.scalars().unique().all())
@@ -442,7 +443,8 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                 .options(
                     joinedload(Measurement.measurer),
                     joinedload(Measurement.manager),
-                    joinedload(Measurement.confirmed_by)
+                    joinedload(Measurement.confirmed_by),
+                    joinedload(Measurement.auto_assigned_measurer)
                 )
                 .where(Measurement.id == measurement.id)
             )
@@ -557,16 +559,18 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 await callback.answer("❌ Замер не найден", show_alert=True)
                 return
 
-            if not measurement.measurer:
-                await callback.answer("❌ Замерщик не назначен", show_alert=True)
-                return
-
             # Проверяем, что замер в статусе ожидания подтверждения
             if measurement.status != MeasurementStatus.PENDING_CONFIRMATION:
                 await callback.answer("⚠️ Этот замер уже был подтвержден", show_alert=True)
                 return
 
-            # Подтверждаем назначение
+            # Проверяем, что есть предложенный замерщик
+            if not measurement.auto_assigned_measurer:
+                await callback.answer("❌ Нет предложенного замерщика для подтверждения", show_alert=True)
+                return
+
+            # Подтверждаем назначение: переносим auto_assigned_measurer в measurer
+            measurement.measurer_id = measurement.auto_assigned_measurer_id
             measurement.status = MeasurementStatus.ASSIGNED
             measurement.assigned_at = moscow_now()
 
@@ -575,12 +579,12 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
 
             # ВАЖНО: Обновляем счётчик round-robin только при подтверждении!
             # Делаем это ДО коммита, пока сессия активна
-            if measurement.delivery_zone is None or measurement.delivery_zone == "":
-                # Нет зоны доставки = использовался round-robin
+            if measurement.assignment_reason == 'round_robin':
+                # Использовался round-robin - обновляем счётчик
                 from services.zone_service import ZoneService
                 zone_service = ZoneService(session)
-                await zone_service.update_round_robin_counter(measurement.measurer.id)
-                logger.info(f"Round-robin счётчик обновлён при подтверждении на замерщика {measurement.measurer.id}")
+                await zone_service.update_round_robin_counter(measurement.measurer_id)
+                logger.info(f"Round-robin счётчик обновлён при подтверждении на замерщика {measurement.measurer_id}")
 
             # ВАЖНО: Получаем уведомления ДО коммита, пока сессия активна
             # И сразу извлекаем нужные данные, чтобы избежать ошибки greenlet_spawn
@@ -606,37 +610,80 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 .options(
                     joinedload(Measurement.measurer),
                     joinedload(Measurement.manager),
-                    joinedload(Measurement.confirmed_by)
+                    joinedload(Measurement.confirmed_by),
+                    joinedload(Measurement.auto_assigned_measurer)
                 )
                 .where(Measurement.id == measurement.id)
             )
             measurement = result.scalar_one()
 
+            # ВАЖНО: Сохраняем нужные данные в переменные ДО выхода из сессии
+            measurer_full_name = measurement.measurer.full_name if measurement.measurer else "Неизвестен"
+            manager_full_name = measurement.manager.full_name if measurement.manager else None
+            measurement_id = measurement.id
+            measurement_status = measurement.status
+            measurement_lead_name = measurement.lead_name
+            measurement_order_number = measurement.order_number
+
+            # ВАЖНО: Получаем текст для обновления сообщения ВНУТРИ сессии
+            info_text = measurement.get_info_text(detailed=True, show_admin_info=True)
+
+            # Сохраняем ссылки на связанные объекты для отправки уведомлений
+            # ВАЖНО: Создаем временные объекты с нужными данными
+            # чтобы избежать проблем с закрытой сессией
+            class UserData:
+                def __init__(self, user):
+                    if user:
+                        self.full_name = user.full_name
+                        self.telegram_id = user.telegram_id
+                        self.id = user.id
+
+            class MeasurementData:
+                def __init__(self, meas):
+                    self.id = meas.id
+                    self.lead_name = meas.lead_name
+                    self.order_number = meas.order_number
+                    self.address = meas.address
+                    self.delivery_zone = meas.delivery_zone
+                    self.contact_name = meas.contact_name
+                    self.contact_phone = meas.contact_phone
+                    self.windows_count = meas.windows_count
+                    self.windows_area = meas.windows_area
+                    self.status_text = meas.status_text
+                    self.amocrm_lead_id = meas.amocrm_lead_id
+                    self.created_at = meas.created_at
+                    self.assigned_at = meas.assigned_at
+
+            measurer_obj = UserData(measurement.measurer) if measurement.measurer else None
+            manager_obj = UserData(measurement.manager) if measurement.manager else None
+            measurement_obj = MeasurementData(measurement)
+
             # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Распределение подтверждено!</b>\n\n"
-            new_text += measurement.get_info_text(detailed=True, show_admin_info=True)
+            new_text += info_text
 
             keyboard = get_measurement_actions_keyboard(
-                measurement.id,
+                measurement_id,
                 is_admin=True,
-                current_status=measurement.status
+                current_status=measurement_status
             )
 
             await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
 
-            # Отправляем уведомления замерщику
-            await send_assignment_notification_to_measurer(callback.bot, measurement.measurer, measurement, measurement.measurer.full_name)
-            logger.info(f"Отправлено уведомление замерщику {measurement.measurer.full_name}")
+            # Отправляем уведомления замерщику (используем measurement_obj вместо measurement)
+            if measurer_obj:
+                await send_assignment_notification_to_measurer(callback.bot, measurer_obj, measurement_obj, measurer_full_name)
+                logger.info(f"Отправлено уведомление замерщику {measurer_full_name}")
 
-            # Отправляем уведомление менеджеру
-            if measurement.manager:
+            # Отправляем уведомление менеджеру (используем measurement_obj вместо measurement)
+            if manager_obj:
                 await send_assignment_notification_to_manager(
                     callback.bot,
-                    measurement.manager,
-                    measurement,
-                    measurement.measurer
+                    manager_obj,
+                    measurement_obj,
+                    measurer_obj
                 )
-                logger.info(f"Отправлено уведомление менеджеру {measurement.manager.full_name}")
+                logger.info(f"Отправлено уведомление менеджеру {manager_full_name}")
 
             # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
             # Получаем имя пользователя, который подтвердил замер
@@ -647,19 +694,19 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
             for notif_data in notifications_data:
                 try:
                     # Формируем расширенный текст уведомления
-                    notification_text = f"✅ <b>Замер #{measurement.id} уже распределен</b>\n\n"
+                    notification_text = f"✅ <b>Замер #{measurement_id} уже распределен</b>\n\n"
 
                     # Информация о замере
-                    notification_text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-                    if measurement.order_number:
-                        notification_text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+                    notification_text += f"📄 <b>Сделка:</b> {measurement_lead_name}\n"
+                    if measurement_order_number:
+                        notification_text += f"🔢 <b>Номер заказа:</b> {measurement_order_number}\n"
 
                     notification_text += "\n"
 
                     # Информация о распределении
                     notification_text += f"✅ <b>Действие:</b> Подтверждено автоматическое распределение\n"
                     notification_text += f"👤 <b>Подтвердил:</b> {confirmed_by_name}\n"
-                    notification_text += f"👷 <b>Замерщик:</b> {measurement.measurer.full_name}\n"
+                    notification_text += f"👷 <b>Замерщик:</b> {measurer_full_name}\n"
 
                     await callback.bot.edit_message_text(
                         chat_id=notif_data['telegram_chat_id'],
@@ -671,8 +718,8 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                 except Exception as e:
                     logger.warning(f"Не удалось обновить уведомление {notif_data['id']}: {e}")
 
-            await callback.answer(f"✅ Распределение подтверждено. {measurement.measurer.full_name} назначен на замер")
-            logger.info(f"Замер #{measurement.id} подтвержден руководителем {callback.from_user.id}, замерщик: {measurement.measurer.full_name}")
+            await callback.answer(f"✅ Распределение подтверждено. {measurer_full_name} назначен на замер")
+            logger.info(f"Замер #{measurement_id} подтвержден руководителем {callback.from_user.id}, замерщик: {measurer_full_name}")
 
     except Exception as e:
         logger.error(f"Ошибка при подтверждении распределения: {e}", exc_info=True)
@@ -738,7 +785,8 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
                     .options(
                         joinedload(Measurement.measurer),
                         joinedload(Measurement.manager),
-                        joinedload(Measurement.confirmed_by)
+                        joinedload(Measurement.confirmed_by),
+                        joinedload(Measurement.auto_assigned_measurer)
                     )
                     .order_by(Measurement.created_at.desc())
                     .limit(20)
@@ -865,6 +913,22 @@ async def handle_zones_button(message: Message, has_admin_access: bool = False):
     )
 
 
+@admin_router.message(Command("hide"))
+async def cmd_hide_keyboard(message: Message, has_admin_access: bool = False):
+    """Скрыть клавиатуру команд"""
+    if not has_admin_access and not is_admin(message.from_user.id):
+        await message.answer("⚠️ У вас нет доступа к этой команде.")
+        return
+
+    from bot.keyboards.reply import remove_keyboard
+
+    await message.answer(
+        "✅ Клавиатура скрыта.\n\n"
+        "Чтобы снова показать клавиатуру, используйте команду /menu",
+        reply_markup=remove_keyboard()
+    )
+
+
 # ========================================
 # Управление пользователями
 # ========================================
@@ -982,6 +1046,16 @@ async def handle_user_detail(callback: CallbackQuery, has_admin_access: bool = F
             else:
                 text += f"<b>AmoCRM:</b> ⚠️ Не привязан\n"
 
+            # Информация об имени замерщика (только для замерщиков)
+            if user.role.value == "measurer":
+                from services.measurer_name_service import MeasurerNameService
+                name_service = MeasurerNameService(session)
+                measurer_name = await name_service.get_measurer_name_by_user_id(user.id)
+                if measurer_name:
+                    text += f"<b>Имя замерщика (AmoCRM):</b> {measurer_name}\n"
+                else:
+                    text += f"<b>Имя замерщика (AmoCRM):</b> ⚠️ Не установлено\n"
+
             text += f"<b>Создан:</b> {user.created_at.strftime('%d.%m.%Y %H:%M')}\n"
 
             keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
@@ -1070,6 +1144,16 @@ async def handle_user_set_role(callback: CallbackQuery, has_admin_access: bool =
             text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n"
             text += f"<b>Статус:</b> {'✅ Активен' if user.is_active else '⛔ Неактивен'}\n"
 
+            # Информация об имени замерщика (только для замерщиков)
+            if user.role.value == "measurer":
+                from services.measurer_name_service import MeasurerNameService
+                name_service = MeasurerNameService(session)
+                measurer_name = await name_service.get_measurer_name_by_user_id(user.id)
+                if measurer_name:
+                    text += f"<b>Имя замерщика (AmoCRM):</b> {measurer_name}\n"
+                else:
+                    text += f"<b>Имя замерщика (AmoCRM):</b> ⚠️ Не установлено\n"
+
             keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
 
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -1134,6 +1218,16 @@ async def handle_user_toggle(callback: CallbackQuery, has_admin_access: bool = F
 
             text += f"<b>Роль:</b> {role_names.get(user.role.value, user.role.value)}\n"
             text += f"<b>Статус:</b> {'✅ Активен' if user.is_active else '⛔ Неактивен'}\n"
+
+            # Информация об имени замерщика (только для замерщиков)
+            if user.role.value == "measurer":
+                from services.measurer_name_service import MeasurerNameService
+                name_service = MeasurerNameService(session)
+                measurer_name = await name_service.get_measurer_name_by_user_id(user.id)
+                if measurer_name:
+                    text += f"<b>Имя замерщика (AmoCRM):</b> {measurer_name}\n"
+                else:
+                    text += f"<b>Имя замерщика (AmoCRM):</b> ⚠️ Не установлено\n"
 
             keyboard = get_user_detail_keyboard(user.id, user.role.value, user.is_active)
 

@@ -19,7 +19,8 @@ from bot.keyboards.reply import (
     get_admin_commands_keyboard,
     get_measurer_commands_keyboard,
     get_manager_commands_keyboard,
-    get_cancel_keyboard
+    get_cancel_keyboard,
+    remove_keyboard
 )
 
 __all__ = [
@@ -43,4 +44,5 @@ __all__ = [
     "get_measurer_commands_keyboard",
     "get_manager_commands_keyboard",
     "get_cancel_keyboard",
+    "remove_keyboard",
 ]

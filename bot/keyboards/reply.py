@@ -1,5 +1,5 @@
 """Reply клавиатуры для быстрого доступа к командам"""
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 
@@ -21,7 +21,7 @@ def get_admin_commands_keyboard() -> ReplyKeyboardMarkup:
     builder.row(KeyboardButton(text="🗺 Управление зонами"))
     builder.row(KeyboardButton(text="🔔 Уведомления"))
 
-    return builder.as_markup(resize_keyboard=True, is_persistent=True)
+    return builder.as_markup(resize_keyboard=True)
 
 
 def get_measurer_commands_keyboard() -> ReplyKeyboardMarkup:
@@ -40,7 +40,7 @@ def get_measurer_commands_keyboard() -> ReplyKeyboardMarkup:
         KeyboardButton(text="🔄 Мои замеры в работе")
     )
 
-    return builder.as_markup(resize_keyboard=True, is_persistent=True)
+    return builder.as_markup(resize_keyboard=True)
 
 
 def get_manager_commands_keyboard() -> ReplyKeyboardMarkup:
@@ -59,7 +59,7 @@ def get_manager_commands_keyboard() -> ReplyKeyboardMarkup:
         KeyboardButton(text="🔄 Заказы в работе")
     )
 
-    return builder.as_markup(resize_keyboard=True, is_persistent=True)
+    return builder.as_markup(resize_keyboard=True)
 
 
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
@@ -71,7 +71,7 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     """
     builder = ReplyKeyboardBuilder()
     builder.button(text="❌ Отмена")
-    return builder.as_markup(resize_keyboard=True, is_persistent=True)
+    return builder.as_markup(resize_keyboard=True)
 
 
 def get_keyboard_by_role(role: str) -> ReplyKeyboardMarkup:
@@ -92,3 +92,13 @@ def get_keyboard_by_role(role: str) -> ReplyKeyboardMarkup:
         return get_measurer_commands_keyboard()
     else:
         return get_admin_commands_keyboard()  # По умолчанию
+
+
+def remove_keyboard() -> ReplyKeyboardRemove:
+    """
+    Удалить reply клавиатуру
+
+    Returns:
+        ReplyKeyboardRemove объект для скрытия клавиатуры
+    """
+    return ReplyKeyboardRemove()

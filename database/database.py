@@ -168,7 +168,8 @@ async def get_measurement_by_id(session: AsyncSession, measurement_id: int) -> M
         .options(
             joinedload(Measurement.measurer),
             joinedload(Measurement.manager),
-            joinedload(Measurement.confirmed_by)  # Добавляем eager loading для confirmed_by
+            joinedload(Measurement.confirmed_by),
+            joinedload(Measurement.auto_assigned_measurer)
         )
         .where(Measurement.id == measurement_id)
     )
@@ -184,7 +185,8 @@ async def get_measurement_by_amocrm_id(session: AsyncSession, amocrm_lead_id: in
         .options(
             joinedload(Measurement.measurer),
             joinedload(Measurement.manager),
-            joinedload(Measurement.confirmed_by)
+            joinedload(Measurement.confirmed_by),
+            joinedload(Measurement.auto_assigned_measurer)
         )
         .where(Measurement.amocrm_lead_id == amocrm_lead_id)
     )
@@ -204,10 +206,11 @@ async def get_measurements_by_status(
         .options(
             joinedload(Measurement.measurer),
             joinedload(Measurement.manager),
-            joinedload(Measurement.confirmed_by)
+            joinedload(Measurement.confirmed_by),
+            joinedload(Measurement.auto_assigned_measurer)
         )
         .where(Measurement.status == status)
-        .order_by(Measurement.created_at.desc())
+        .order_by(Measurement.created_at.asc())
     )
 
     if limit:
@@ -230,7 +233,8 @@ async def get_measurements_by_measurer(
         .options(
             joinedload(Measurement.measurer),
             joinedload(Measurement.manager),
-            joinedload(Measurement.confirmed_by)
+            joinedload(Measurement.confirmed_by),
+            joinedload(Measurement.auto_assigned_measurer)
         )
         .where(Measurement.measurer_id == measurer_id)
     )
@@ -238,7 +242,7 @@ async def get_measurements_by_measurer(
     if status:
         query = query.where(Measurement.status == status)
 
-    query = query.order_by(Measurement.created_at.desc())
+    query = query.order_by(Measurement.created_at.asc())
 
     result = await session.execute(query)
     return list(result.scalars().unique().all())
@@ -257,7 +261,8 @@ async def get_measurements_by_manager(
         .options(
             joinedload(Measurement.measurer),
             joinedload(Measurement.manager),
-            joinedload(Measurement.confirmed_by)
+            joinedload(Measurement.confirmed_by),
+            joinedload(Measurement.auto_assigned_measurer)
         )
         .where(Measurement.manager_id == manager_id)
     )
@@ -265,7 +270,7 @@ async def get_measurements_by_manager(
     if status:
         query = query.where(Measurement.status == status)
 
-    query = query.order_by(Measurement.created_at.desc())
+    query = query.order_by(Measurement.created_at.asc())
 
     result = await session.execute(query)
     return list(result.scalars().unique().all())
@@ -283,15 +288,27 @@ async def create_measurement(
     order_number: str | None = None,
     windows_count: str | None = None,
     windows_area: str | None = None,
-    manager_id: int | None = None
+    manager_id: int | None = None,
+    dealer_company_name: str | None = None,
+    dealer_field_value: str | None = None
 ) -> Measurement:
-    """Создать новый замер с автоматическим распределением по зонам"""
+    """
+    Создать новый замер с 3-уровневой автоматической системой распределения
+
+    Priority 1: Dealer assignment (dealer_field_value)
+    Priority 2: Zone assignment (delivery_zone)
+    Priority 3: Round-robin
+    """
     from services.zone_service import ZoneService
     from datetime import datetime
 
-    # Автоматически назначаем замерщика на основе зоны доставки
+    # Используем новую 3-уровневую систему приоритетов
     zone_service = ZoneService(session)
-    assigned_measurer = await zone_service.assign_measurer_by_zone(delivery_zone)
+    assigned_measurer, assignment_reason, additional_info = await zone_service.assign_measurer_with_priority(
+        delivery_zone=delivery_zone,
+        measurer_field_value=dealer_field_value,
+        company_name=dealer_company_name
+    )
 
     measurement = Measurement(
         amocrm_lead_id=amocrm_lead_id,
@@ -305,30 +322,52 @@ async def create_measurement(
         windows_count=windows_count,
         windows_area=windows_area,
         manager_id=manager_id,
-        measurer_id=assigned_measurer.id if assigned_measurer else None,
+        # Предложенный замерщик (до подтверждения админом)
+        measurer_id=None,  # Будет установлен после подтверждения
         assigned_at=None,  # Дата назначения будет установлена после подтверждения
+        # История автораспределения
+        auto_assigned_measurer_id=assigned_measurer.id if assigned_measurer else None,
+        assignment_reason=assignment_reason,
+        dealer_company_name=dealer_company_name,
+        dealer_field_value=dealer_field_value,
         status=MeasurementStatus.PENDING_CONFIRMATION  # Ожидает подтверждения руководителем
     )
     session.add(measurement)
     await session.commit()
 
-    # Загружаем объект заново со всеми связями (measurer, manager, confirmed_by)
+    # Загружаем объект заново со всеми связями (measurer, manager, confirmed_by, auto_assigned_measurer)
     from sqlalchemy.orm import joinedload
     result = await session.execute(
         select(Measurement)
         .options(
             joinedload(Measurement.measurer),
             joinedload(Measurement.manager),
-            joinedload(Measurement.confirmed_by)
+            joinedload(Measurement.confirmed_by),
+            joinedload(Measurement.auto_assigned_measurer)
         )
         .where(Measurement.id == measurement.id)
     )
     measurement = result.scalar_one()
 
+    # Логируем результат распределения
     if assigned_measurer:
-        logger.info(f"Создан новый замер: {measurement}, назначен замерщик: {assigned_measurer.full_name}")
+        reason_text = {
+            'dealer': f'дилер "{additional_info}"',
+            'zone': f'зона "{additional_info}"',
+            'round_robin': 'round-robin',
+            'none': 'не назначен'
+        }.get(assignment_reason, assignment_reason)
+
+        logger.info(
+            f"Создан новый замер #{measurement.id} для сделки {amocrm_lead_id}. "
+            f"Автораспределение: {reason_text}, "
+            f"предложенный замерщик: {assigned_measurer.full_name}"
+        )
     else:
-        logger.warning(f"Создан новый замер: {measurement}, но не найден подходящий замерщик")
+        logger.warning(
+            f"Создан новый замер #{measurement.id} для сделки {amocrm_lead_id}, "
+            f"но не найден подходящий замерщик"
+        )
 
     return measurement
 
@@ -738,7 +777,7 @@ async def get_recent_notifications(
     limit: int = 20
 ) -> list[Notification]:
     """
-    Получить последние уведомления
+    Получить последние уведомления (отсортированные от старого к новому)
 
     Args:
         session: Сессия БД
@@ -749,13 +788,18 @@ async def get_recent_notifications(
     """
     from sqlalchemy.orm import joinedload
 
+    # Сначала получаем последние N уведомлений (сортировка по убыванию)
+    # Затем переворачиваем результат, чтобы показать от старого к новому
     result = await session.execute(
         select(Notification)
         .options(joinedload(Notification.recipient))
         .order_by(Notification.sent_at.desc())
         .limit(limit)
     )
-    return list(result.scalars().unique().all())
+    notifications = list(result.scalars().unique().all())
+
+    # Переворачиваем список, чтобы показать от старого к новому
+    return list(reversed(notifications))
 
 
 async def get_notifications_by_user(

@@ -211,3 +211,22 @@ async def handle_in_progress_measurements_button(message: Message):
             text += "\n"
 
         await message.answer(text, parse_mode="HTML")
+
+
+@manager_router.message(Command("hide"))
+async def cmd_hide_keyboard(message: Message):
+    """Скрыть клавиатуру команд"""
+    async for session in get_db():
+        user = await get_user_by_telegram_id(session, message.from_user.id)
+
+        if not user or user.role != UserRole.MANAGER:
+            await message.answer("⚠️ У вас нет доступа к этой команде.")
+            return
+
+        from bot.keyboards.reply import remove_keyboard
+
+        await message.answer(
+            "✅ Клавиатура скрыта.\n\n"
+            "Чтобы снова показать клавиатуру, используйте команду /start",
+            reply_markup=remove_keyboard()
+        )

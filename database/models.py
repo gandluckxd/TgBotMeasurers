@@ -69,6 +69,11 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+    assigned_measurer_names: Mapped[list["MeasurerNameAssignment"]] = relationship(
+        "MeasurerNameAssignment",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User(telegram_id={self.telegram_id}, role={self.role.value})>"
@@ -147,6 +152,31 @@ class Measurement(Base):
     confirmed_by: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[confirmed_by_user_id]
+    )
+
+    # === ИСТОРИЯ АВТОМАТИЧЕСКОГО РАСПРЕДЕЛЕНИЯ ===
+    # Кто был автоматически назначен (до подтверждения админом)
+    auto_assigned_measurer_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    auto_assigned_measurer: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[auto_assigned_measurer_id]
+    )
+
+    # Причина автоназначения: 'dealer', 'zone', 'round_robin', 'none'
+    assignment_reason: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, index=True
+    )
+
+    # Название компании из AmoCRM (если назначение по дилеру)
+    dealer_company_name: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
+    )
+
+    # Значение поля "Замерщик" из компании в AmoCRM (если назначение по дилеру)
+    dealer_field_value: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
     )
 
     # Временные метки
@@ -240,9 +270,62 @@ class Measurement(Base):
         if self.measurer:
             text += f"👷 <b>Замерщик:</b> {self.measurer.full_name}\n"
 
-        # === БЛОК 5: Информация о подтверждении (ТОЛЬКО для админов/руководителей) ===
-        if show_admin_info and self.confirmed_by:
-            text += f"✅ <b>Подтвердил:</b> {self.confirmed_by.full_name}\n"
+        # === БЛОК 5: Информация о подтверждении и распределении (ТОЛЬКО для админов/руководителей) ===
+        if show_admin_info:
+            # Показываем информацию о предложенном замерщике для статуса PENDING_CONFIRMATION
+            if self.status == MeasurementStatus.PENDING_CONFIRMATION and self.auto_assigned_measurer:
+                text += "\n⚡️ <b>Система предлагает:</b>\n"
+                text += f"  👷 {self.auto_assigned_measurer.full_name}\n"
+
+                if self.assignment_reason:
+                    reason_text = {
+                        'dealer': '🏢 Привязанный замерщик',
+                        'zone': '🗺 Зона',
+                        'round_robin': '🔄 По очереди',
+                        'none': '❌ Не назначен'
+                    }.get(self.assignment_reason, '❓ Неизвестно')
+                    text += f"  📌 Причина: {reason_text}\n"
+
+                    # Если назначение по дилеру - показываем доп информацию
+                    if self.assignment_reason == 'dealer':
+                        if self.dealer_company_name:
+                            text += f"  🏢 Компания: {self.dealer_company_name}\n"
+                    elif self.assignment_reason == 'zone' and self.delivery_zone:
+                        text += f"  🗺 Зона: {self.delivery_zone}\n"
+
+            # История автоматического распределения (для подтвержденных замеров)
+            elif self.assignment_reason and self.status != MeasurementStatus.PENDING_CONFIRMATION:
+                text += "\n📊 <b>История распределения:</b>\n"
+
+                reason_text = {
+                    'dealer': '🏢 Привязанный замерщик',
+                    'zone': '🗺 Зона',
+                    'round_robin': '🔄 По очереди',
+                    'none': '❌ Не назначен'
+                }.get(self.assignment_reason, '❓ Неизвестно')
+
+                text += f"  📌 Причина: {reason_text}\n"
+
+                # Если назначение по дилеру - показываем доп информацию
+                if self.assignment_reason == 'dealer':
+                    if self.dealer_company_name:
+                        text += f"  🏢 Компания: {self.dealer_company_name}\n"
+                    if self.dealer_field_value:
+                        text += f"  👷 Привязанный замерщик: {self.dealer_field_value}\n"
+                elif self.assignment_reason == 'zone' and self.delivery_zone:
+                    text += f"  🗺 Зона: {self.delivery_zone}\n"
+
+                # Если замерщик был изменён
+                if self.auto_assigned_measurer and self.measurer:
+                    if self.auto_assigned_measurer.id != self.measurer.id:
+                        text += f"  🔄 Изначально: {self.auto_assigned_measurer.full_name}\n"
+                        text += f"  ✅ Назначен: {self.measurer.full_name}\n"
+                    else:
+                        text += f"  ✅ Подтверждён: {self.auto_assigned_measurer.full_name}\n"
+
+            # Кто подтвердил
+            if self.confirmed_by:
+                text += f"  👤 Подтвердил: {self.confirmed_by.full_name}\n"
 
         # === БЛОК 6: Временные метки (детальная информация) ===
         if detailed:
@@ -405,6 +488,52 @@ class RoundRobinCounter(Base):
 
     def __repr__(self) -> str:
         return f"<RoundRobinCounter(last_assigned_user_id={self.last_assigned_user_id})>"
+
+
+class MeasurerName(Base):
+    """Модель имени замерщика (дилера) из AmoCRM"""
+    __tablename__ = 'measurer_names'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Связь с назначениями
+    assignments: Mapped[list["MeasurerNameAssignment"]] = relationship(
+        'MeasurerNameAssignment',
+        back_populates='measurer_name',
+        cascade='all, delete-orphan'
+    )
+
+    def __repr__(self) -> str:
+        return f"<MeasurerName(id={self.id}, name='{self.name}')>"
+
+
+class MeasurerNameAssignment(Base):
+    """Модель привязки имени замерщика к пользователю"""
+    __tablename__ = 'measurer_name_assignments'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'measurer_name_id', name='unique_user_measurer_name'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    measurer_name_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("measurer_names.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Связи
+    measurer_name: Mapped["MeasurerName"] = relationship(
+        'MeasurerName',
+        back_populates='assignments'
+    )
+    user: Mapped["User"] = relationship('User', back_populates='assigned_measurer_names')
+
+    def __repr__(self) -> str:
+        return f"<MeasurerNameAssignment(user_id={self.user_id}, measurer_name_id={self.measurer_name_id})>"
 
 
 class Notification(Base):
