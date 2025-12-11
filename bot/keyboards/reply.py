@@ -62,6 +62,25 @@ def get_manager_commands_keyboard() -> ReplyKeyboardMarkup:
     return builder.as_markup(resize_keyboard=True)
 
 
+def get_observer_commands_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Создать клавиатуру с быстрыми командами для наблюдателя
+    ТОЛЬКО 2 команды: Все замеры и Замеры в работе
+
+    Returns:
+        Reply клавиатура
+    """
+    builder = ReplyKeyboardBuilder()
+
+    # Только 2 кнопки
+    builder.row(
+        KeyboardButton(text="📊 Все замеры"),
+        KeyboardButton(text="🔄 Замеры в работе")
+    )
+
+    return builder.as_markup(resize_keyboard=True)
+
+
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     """
     Создать клавиатуру с кнопкой отмены
@@ -79,7 +98,7 @@ def get_keyboard_by_role(role: str) -> ReplyKeyboardMarkup:
     Получить клавиатуру в зависимости от роли пользователя
 
     Args:
-        role: Роль пользователя (admin, supervisor, manager, measurer)
+        role: Роль пользователя (admin, supervisor, manager, measurer, observer)
 
     Returns:
         Reply клавиатура
@@ -90,6 +109,8 @@ def get_keyboard_by_role(role: str) -> ReplyKeyboardMarkup:
         return get_manager_commands_keyboard()
     elif role == "measurer":
         return get_measurer_commands_keyboard()
+    elif role == "observer":
+        return get_observer_commands_keyboard()
     else:
         return get_admin_commands_keyboard()  # По умолчанию
 

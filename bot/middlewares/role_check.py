@@ -89,6 +89,7 @@ class RoleCheckMiddleware(BaseMiddleware):
             data["is_supervisor"] = user_role == UserRole.SUPERVISOR
             data["is_manager"] = user_role == UserRole.MANAGER
             data["is_measurer"] = user_role == UserRole.MEASURER
+            data["is_observer"] = user_role == UserRole.OBSERVER
 
             # Руководитель (Supervisor) имеет ПОЛНЫЕ права администратора (один в один!)
             # Единственное отличие - администратор зафиксирован в конфиге, а руководители управляются в БД
@@ -101,6 +102,7 @@ class RoleCheckMiddleware(BaseMiddleware):
             data["is_supervisor"] = False
             data["is_manager"] = False
             data["is_measurer"] = False
+            data["is_observer"] = False
             data["has_admin_access"] = False
 
         # Вызываем обработчик

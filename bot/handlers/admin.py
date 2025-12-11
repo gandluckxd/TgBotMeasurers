@@ -39,7 +39,8 @@ from bot.keyboards.reply import (
 from bot.utils.notifications import (
     send_assignment_notification_to_measurer,
     send_assignment_notification_to_manager,
-    send_measurer_change_notification
+    send_measurer_change_notification,
+    send_assignment_notification_to_observers
 )
 from config import settings
 
@@ -68,11 +69,8 @@ is_admin = is_admin_or_supervisor
 async def cmd_start(message: Message, has_admin_access: bool = False):
     """Обработчик команды /start для администратора и руководителя"""
     # Проверяем права доступа (админ или руководитель)
+    # Если не админ и не руководитель - пропускаем обработку (для других ролей)
     if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer(
-            "⚠️ У вас нет доступа к этой команде.\n"
-            "Обратитесь к администратору для получения доступа."
-        )
         return
 
     async for session in get_db():
@@ -163,8 +161,8 @@ async def cmd_measurers(message: Message, has_admin_access: bool = False):
 @admin_router.message(Command("pending"))
 async def cmd_pending(message: Message, has_admin_access: bool = False):
     """Показать замеры в работе (со статусом ASSIGNED)"""
+    # Если не админ и не руководитель - пропускаем обработку (для других ролей)
     if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
     async for session in get_db():
@@ -221,8 +219,8 @@ async def cmd_pending_confirmation(message: Message, has_admin_access: bool = Fa
 @admin_router.message(Command("all"))
 async def cmd_all(message: Message, has_admin_access: bool = False):
     """Показать все замеры"""
+    # Если не админ и не руководитель - пропускаем обработку (для других ролей)
     if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
         return
 
     async for session in get_db():
@@ -497,6 +495,9 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
                         measurer
                     )
 
+                # Отправляем уведомление наблюдателям
+                await send_assignment_notification_to_observers(callback.bot, measurement, measurer)
+
                 # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
                 # Получаем имя пользователя, который распределил замер
                 confirmed_by_name = callback.from_user.full_name
@@ -551,7 +552,7 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
 
         async for session in get_db():
             from sqlalchemy import select
-            from database.models import Measurement
+            from database.models import Measurement, User
 
             measurement = await get_measurement_by_id(session, measurement_id)
 
@@ -617,8 +618,20 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
             )
             measurement = result.scalar_one()
 
+            # ВАЖНО: Явно перезагружаем замерщика (новый объект после коммита)
+            # Это гарантирует, что объект замерщика будет доступен
+            measurer_obj_from_db = None
+            if measurement.measurer_id:
+                result = await session.execute(select(User).where(User.id == measurement.measurer_id))
+                measurer_obj_from_db = result.scalar_one_or_none()
+                logger.info(f"DEBUG: Перезагружен замерщик ID {measurement.measurer_id}: {measurer_obj_from_db}")
+
             # ВАЖНО: Сохраняем нужные данные в переменные ДО выхода из сессии
-            measurer_full_name = measurement.measurer.full_name if measurement.measurer else "Неизвестен"
+            # Добавляем отладочный лог
+            logger.info(f"DEBUG: После перезагрузки measurement.measurer_id = {measurement.measurer_id}, measurement.measurer = {measurement.measurer}, measurer_obj_from_db = {measurer_obj_from_db}")
+
+            # ВАЖНО: Используем явно перезагруженного замерщика для получения имени
+            measurer_full_name = measurer_obj_from_db.full_name if measurer_obj_from_db else "Неизвестен"
             manager_full_name = measurement.manager.full_name if measurement.manager else None
             measurement_id = measurement.id
             measurement_status = measurement.status
@@ -647,6 +660,7 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                     self.delivery_zone = meas.delivery_zone
                     self.contact_name = meas.contact_name
                     self.contact_phone = meas.contact_phone
+                    self.responsible_user_name = meas.responsible_user_name
                     self.windows_count = meas.windows_count
                     self.windows_area = meas.windows_area
                     self.status_text = meas.status_text
@@ -654,9 +668,13 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                     self.created_at = meas.created_at
                     self.assigned_at = meas.assigned_at
 
-            measurer_obj = UserData(measurement.measurer) if measurement.measurer else None
+            # ВАЖНО: Используем явно перезагруженного замерщика для создания UserData
+            measurer_obj = UserData(measurer_obj_from_db) if measurer_obj_from_db else None
             manager_obj = UserData(measurement.manager) if measurement.manager else None
             measurement_obj = MeasurementData(measurement)
+
+            # Добавляем отладочный лог
+            logger.info(f"DEBUG: measurer_obj = {measurer_obj}, has telegram_id = {hasattr(measurer_obj, 'telegram_id') if measurer_obj else False}")
 
             # Обновляем сообщение (с информацией для админа)
             new_text = "✅ <b>Распределение подтверждено!</b>\n\n"
@@ -684,6 +702,11 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
                     measurer_obj
                 )
                 logger.info(f"Отправлено уведомление менеджеру {manager_full_name}")
+
+            # Отправляем уведомление наблюдателям (используем measurement_obj вместо measurement)
+            if measurer_obj:
+                await send_assignment_notification_to_observers(callback.bot, measurement_obj, measurer_obj)
+                logger.info(f"Отправлены уведомления наблюдателям о назначении {measurer_full_name}")
 
             # ВАЖНО: Обновляем уведомления о подтверждении у других админов/руководителей
             # Получаем имя пользователя, который подтвердил замер
@@ -950,7 +973,7 @@ async def cmd_users(message: Message, has_admin_access: bool = False):
         keyboard = get_users_list_keyboard(users, page=0)
         text = f"👥 <b>Список пользователей ({len(users)}):</b>\n\n"
         text += "✅ - активен | ⛔ - неактивен\n"
-        text += "👑 - админ | 👔 - руководитель | 💼 - менеджер | 👷 - замерщик"
+        text += "👑 - админ | 👔 - руководитель | 💼 - менеджер | 👷 - замерщик | 👀 - наблюдатель"
 
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
@@ -1026,7 +1049,8 @@ async def handle_user_detail(callback: CallbackQuery, has_admin_access: bool = F
                 "admin": "Администратор",
                 "supervisor": "Руководитель",
                 "manager": "Менеджер",
-                "measurer": "Замерщик"
+                "measurer": "Замерщик",
+                "observer": "Наблюдатель"
             }
 
             text = f"👤 <b>Информация о пользователе</b>\n\n"
@@ -1124,7 +1148,8 @@ async def handle_user_set_role(callback: CallbackQuery, has_admin_access: bool =
                 "admin": "Администратор",
                 "supervisor": "Руководитель",
                 "manager": "Менеджер",
-                "measurer": "Замерщик"
+                "measurer": "Замерщик",
+                "observer": "Наблюдатель"
             }
 
             await callback.answer(
@@ -1205,7 +1230,8 @@ async def handle_user_toggle(callback: CallbackQuery, has_admin_access: bool = F
                 "admin": "Администратор",
                 "supervisor": "Руководитель",
                 "manager": "Менеджер",
-                "measurer": "Замерщик"
+                "measurer": "Замерщик",
+                "observer": "Наблюдатель"
             }
 
             text = f"👤 <b>Информация о пользователе</b>\n\n"

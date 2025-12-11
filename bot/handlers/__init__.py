@@ -2,6 +2,7 @@
 from bot.handlers.admin import admin_router
 from bot.handlers.measurer import measurer_router
 from bot.handlers.manager import manager_router
+from bot.handlers.observer import observer_router
 from bot.handlers.registration import registration_router
 from bot.handlers.invite_links import invite_links_router
 from bot.handlers.zones import zones_router
@@ -15,4 +16,5 @@ __all__ = [
     "admin_router",
     "measurer_router",
     "manager_router",
+    "observer_router",
 ]

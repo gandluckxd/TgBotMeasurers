@@ -132,7 +132,7 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
     Создать главное меню в зависимости от роли
 
     Args:
-        role: Роль пользователя (admin, supervisor, measurer, manager)
+        role: Роль пользователя (admin, supervisor, measurer, manager, observer)
 
     Returns:
         Inline клавиатура
@@ -157,6 +157,11 @@ def get_main_menu_keyboard(role: str) -> InlineKeyboardMarkup:
         # У менеджера ТОЛЬКО 2 команды: Все замеры и Замеры в работе
         builder.button(text="📊 Все замеры", callback_data="manager:all")
         builder.button(text="🔄 Замеры в работе", callback_data="manager:in_progress")
+
+    elif role == "observer":
+        # У наблюдателя НЕТ inline-кнопок, только просмотр через reply-клавиатуру
+        # Возвращаем пустую клавиатуру
+        pass
 
     # Размещаем кнопки по одной в строке
     builder.adjust(1)
@@ -229,7 +234,8 @@ def get_users_list_keyboard(users: List[User], page: int = 0, per_page: int = 5)
         "admin": "👑",
         "supervisor": "👔",
         "manager": "💼",
-        "measurer": "👷"
+        "measurer": "👷",
+        "observer": "👀"
     }
 
     for user in page_users:
@@ -346,7 +352,8 @@ def get_role_selection_keyboard(user_id: int) -> InlineKeyboardMarkup:
     roles = [
         ("👔 Руководитель", "supervisor"),
         ("💼 Менеджер", "manager"),
-        ("👷 Замерщик", "measurer")
+        ("👷 Замерщик", "measurer"),
+        ("👀 Наблюдатель", "observer")
     ]
 
     for text, role in roles:
@@ -394,7 +401,8 @@ def get_invite_links_keyboard(
         UserRole.ADMIN: "👑",
         UserRole.SUPERVISOR: "👔",
         UserRole.MANAGER: "💼",
-        UserRole.MEASURER: "👷"
+        UserRole.MEASURER: "👷",
+        UserRole.OBSERVER: "👀"
     }
 
     # Добавляем ссылки
@@ -512,6 +520,12 @@ def get_invite_role_selection_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="👷 Замерщик",
             callback_data="invite_role:measurer"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="👀 Наблюдатель",
+            callback_data="invite_role:observer"
         )
     )
 

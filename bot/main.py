@@ -15,6 +15,7 @@ from bot.handlers import (
     admin_router,
     measurer_router,
     manager_router,
+    observer_router,
     zones_router,
     measurer_names_router
 )
@@ -152,9 +153,12 @@ async def main():
     dp.include_router(invite_links_router)
     dp.include_router(zones_router)
     dp.include_router(measurer_names_router)
-    dp.include_router(admin_router)
+    # ВАЖНО: observer_router должен быть ПЕРЕД admin_router,
+    # чтобы наблюдатели могли обрабатывать свои команды
+    dp.include_router(observer_router)
     dp.include_router(measurer_router)
     dp.include_router(manager_router)
+    dp.include_router(admin_router)
 
     # Регистрируем startup и shutdown хэндлеры
     dp.startup.register(on_startup)

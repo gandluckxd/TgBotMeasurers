@@ -183,7 +183,8 @@ async def select_invite_role(callback: CallbackQuery, has_admin_access: bool = F
     role_names = {
         "supervisor": "👔 Руководитель",
         "manager": "💼 Менеджер",
-        "measurer": "👷 Замерщик"
+        "measurer": "👷 Замерщик",
+        "observer": "👀 Наблюдатель"
     }
 
     await callback.message.edit_text(
@@ -206,7 +207,8 @@ async def create_unlimited_invite(callback: CallbackQuery, has_admin_access: boo
     role_map = {
         "supervisor": UserRole.SUPERVISOR,
         "manager": UserRole.MANAGER,
-        "measurer": UserRole.MEASURER
+        "measurer": UserRole.MEASURER,
+        "observer": UserRole.OBSERVER
     }
     role = role_map.get(role_str)
 
@@ -260,7 +262,8 @@ async def create_limited_invite(callback: CallbackQuery, has_admin_access: bool 
     role_map = {
         "supervisor": UserRole.SUPERVISOR,
         "manager": UserRole.MANAGER,
-        "measurer": UserRole.MEASURER
+        "measurer": UserRole.MEASURER,
+        "observer": UserRole.OBSERVER
     }
     role = role_map.get(role_str)
 

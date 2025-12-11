@@ -23,6 +23,7 @@ class UserRole(PyEnum):
     SUPERVISOR = "supervisor"  # Руководитель - может управлять замерами, но не создавать ссылки
     MANAGER = "manager"
     MEASURER = "measurer"
+    OBSERVER = "observer"  # Наблюдатель - получает уведомления о всех замерах, может просматривать все замеры
 
 
 class MeasurementStatus(PyEnum):

@@ -15,7 +15,8 @@ from database.models import UserRole
 from bot.keyboards.reply import (
     get_admin_commands_keyboard,
     get_measurer_commands_keyboard,
-    get_manager_commands_keyboard
+    get_manager_commands_keyboard,
+    get_observer_commands_keyboard
 )
 
 # Создаем роутер для регистрации
@@ -50,7 +51,8 @@ async def cmd_start_with_invite(message: Message, command: CommandObject):
                 UserRole.ADMIN: "👑",
                 UserRole.SUPERVISOR: "👔",
                 UserRole.MANAGER: "💼",
-                UserRole.MEASURER: "👷"
+                UserRole.MEASURER: "👷",
+                UserRole.OBSERVER: "👁"
             }
 
             keyboard = None
@@ -62,6 +64,8 @@ async def cmd_start_with_invite(message: Message, command: CommandObject):
                 keyboard = get_manager_commands_keyboard()
             elif existing_user.role == UserRole.MEASURER:
                 keyboard = get_measurer_commands_keyboard()
+            elif existing_user.role == UserRole.OBSERVER:
+                keyboard = get_observer_commands_keyboard()
 
             await message.answer(
                 f"👋 <b>С возвращением!</b>\n\n"
@@ -151,19 +155,28 @@ async def cmd_start_with_invite(message: Message, command: CommandObject):
                     "• Обновлять статусы замеров\n"
                     "• Добавлять заметки"
                 )
+            elif user.role == UserRole.OBSERVER:
+                keyboard = get_observer_commands_keyboard()
+                role_description = (
+                    "Вы можете:\n"
+                    "• Просматривать все замеры всех замерщиков\n"
+                    "• Получать уведомления о всех распределенных замерах"
+                )
 
             role_emoji = {
                 UserRole.ADMIN: "👑",
                 UserRole.SUPERVISOR: "👔",
                 UserRole.MANAGER: "💼",
-                UserRole.MEASURER: "👷"
+                UserRole.MEASURER: "👷",
+                UserRole.OBSERVER: "👁"
             }
 
             role_names = {
                 UserRole.ADMIN: "Администратор",
                 UserRole.SUPERVISOR: "Руководитель",
                 UserRole.MANAGER: "Менеджер",
-                UserRole.MEASURER: "Замерщик"
+                UserRole.MEASURER: "Замерщик",
+                UserRole.OBSERVER: "Наблюдатель"
             }
 
             await message.answer(
@@ -206,7 +219,8 @@ async def cmd_start_without_invite(message: Message):
                 UserRole.ADMIN: "👑",
                 UserRole.SUPERVISOR: "👔",
                 UserRole.MANAGER: "💼",
-                UserRole.MEASURER: "👷"
+                UserRole.MEASURER: "👷",
+                UserRole.OBSERVER: "👁"
             }
 
             keyboard = None
@@ -218,6 +232,8 @@ async def cmd_start_without_invite(message: Message):
                 keyboard = get_manager_commands_keyboard()
             elif user.role == UserRole.MEASURER:
                 keyboard = get_measurer_commands_keyboard()
+            elif user.role == UserRole.OBSERVER:
+                keyboard = get_observer_commands_keyboard()
 
             await message.answer(
                 f"👋 <b>Здравствуйте!</b>\n\n"

@@ -159,6 +159,17 @@ async def get_all_admins(session: AsyncSession) -> list[User]:
     return list(result.scalars().all())
 
 
+async def get_all_observers(session: AsyncSession) -> list[User]:
+    """Получить всех активных наблюдателей"""
+    result = await session.execute(
+        select(User).where(
+            User.role == UserRole.OBSERVER,
+            User.is_active == True
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def get_measurement_by_id(session: AsyncSession, measurement_id: int) -> Measurement | None:
     """Получить замер по ID"""
     from sqlalchemy.orm import joinedload
