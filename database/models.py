@@ -7,7 +7,6 @@ from sqlalchemy import (
     BigInteger, String, DateTime, Enum, ForeignKey, Text, Integer, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
 
 from utils.timezone_utils import moscow_now
 
@@ -49,10 +48,8 @@ class User(Base):
     amocrm_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now, onupdate=moscow_now)
 
     # Связи
     measurements_as_measurer: Mapped[list["Measurement"]] = relationship(
@@ -181,12 +178,10 @@ class Measurement(Base):
     )
 
     # Временные метки
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
     assigned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now, onupdate=moscow_now)
 
     def __repr__(self) -> str:
         return f"<Measurement(id={self.id}, amocrm_lead_id={self.amocrm_lead_id}, status={self.status.value})>"
@@ -376,10 +371,8 @@ class InviteLink(Base):
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     # Временные метки
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now, onupdate=moscow_now)
 
     def __repr__(self) -> str:
         return f"<InviteLink(token={self.token}, role={self.role.value}, uses={self.current_uses}/{self.max_uses or '∞'})>"
@@ -442,7 +435,7 @@ class DeliveryZone(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     zone_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
 
     # Связь с замерщиками через промежуточную таблицу
     measurer_assignments: Mapped[list["MeasurerZone"]] = relationship(
@@ -469,7 +462,7 @@ class MeasurerZone(Base):
     zone_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("delivery_zones.id", ondelete="CASCADE"), nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
 
     # Связи
     zone: Mapped["DeliveryZone"] = relationship('DeliveryZone', back_populates='measurer_assignments')
@@ -497,7 +490,7 @@ class MeasurerName(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
 
     # Связь с назначениями
     assignments: Mapped[list["MeasurerNameAssignment"]] = relationship(
@@ -524,7 +517,7 @@ class MeasurerNameAssignment(Base):
     measurer_name_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("measurer_names.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now)
 
     # Связи
     measurer_name: Mapped["MeasurerName"] = relationship(
@@ -570,7 +563,7 @@ class Notification(Base):
     is_sent: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     # Временная метка
-    sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=moscow_now, index=True)
 
     def __repr__(self) -> str:
         return f"<Notification(id={self.id}, type={self.notification_type}, recipient_id={self.recipient_id})>"
