@@ -18,12 +18,14 @@ from bot.keyboards.reply import (
     get_manager_commands_keyboard,
     get_observer_commands_keyboard
 )
+from bot.utils.logging_decorators import log_command
 
 # Создаем роутер для регистрации
 registration_router = Router(name="registration")
 
 
 @registration_router.message(CommandStart(deep_link=True))
+@log_command
 async def cmd_start_with_invite(message: Message, command: CommandObject):
     """
     Обработка команды /start с инвайт-ссылкой
@@ -203,6 +205,7 @@ async def cmd_start_with_invite(message: Message, command: CommandObject):
 
 
 @registration_router.message(CommandStart())
+@log_command
 async def cmd_start_without_invite(message: Message):
     """
     Обработка команды /start без инвайт-ссылки

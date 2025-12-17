@@ -42,6 +42,7 @@ from bot.utils.notifications import (
     send_measurer_change_notification,
     send_assignment_notification_to_observers
 )
+from bot.utils.logging_decorators import log_command, log_callback
 from bot.filters import HasAdminAccess
 from config import settings
 

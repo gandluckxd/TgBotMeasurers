@@ -10,6 +10,7 @@ from sqlalchemy import select
 from loguru import logger
 
 from database.models import Base, User, Measurement, InviteLink, UserRole, MeasurementStatus, Notification
+from database.logging_decorator import log_db_operation
 from config import settings
 
 
@@ -62,6 +63,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 get_session = get_db
 
 
+@log_db_operation("GET USER BY TELEGRAM ID")
 async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
     """Получить пользователя по Telegram ID"""
     result = await session.execute(
@@ -70,6 +72,7 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
     return result.scalar_one_or_none()
 
 
+@log_db_operation("CREATE USER")
 async def create_user(
     session: AsyncSession,
     telegram_id: int,

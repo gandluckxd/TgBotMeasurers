@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 
 from database.models import Measurement, User
 from bot.keyboards.inline import get_measurers_keyboard, get_measurement_actions_keyboard
+from bot.utils.notification_logging import log_notification
 
 
 def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
@@ -187,6 +188,7 @@ async def notify_measurers_about_new_lead(full_info: Dict[str, Any]) -> None:
         logger.error(f"Ошибка при отправке уведомлений о новой сделке: {e}", exc_info=True)
 
 
+@log_notification("NEW_MEASUREMENT_TO_ADMIN")
 async def send_new_measurement_to_admin(
     bot: Bot,
     admin_telegram_id: int,
@@ -268,6 +270,7 @@ async def send_new_measurement_to_admin(
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
 
+@log_notification("ASSIGNMENT_TO_MEASURER")
 async def send_assignment_notification_to_measurer(
     bot: Bot,
     measurer: User,
@@ -384,6 +387,7 @@ async def send_assignment_notification_to_measurer(
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
 
+@log_notification("ASSIGNMENT_TO_MANAGER")
 async def send_assignment_notification_to_manager(
     bot: Bot,
     manager: User,
@@ -502,6 +506,7 @@ async def send_assignment_notification_to_manager(
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
 
+@log_notification("NEW_MEASUREMENT_TO_OBSERVERS")
 async def send_new_measurement_notification_to_observers(
     bot: Bot,
     measurement: Measurement
@@ -636,6 +641,7 @@ async def send_new_measurement_notification_to_observers(
         logger.error(f"Ошибка при отправке уведомлений наблюдателям: {e}", exc_info=True)
 
 
+@log_notification("ASSIGNMENT_TO_OBSERVERS")
 async def send_assignment_notification_to_observers(
     bot: Bot,
     measurement: Measurement,
@@ -779,6 +785,7 @@ async def send_assignment_notification_to_observers(
         logger.error(f"Ошибка при отправке уведомлений наблюдателям: {e}", exc_info=True)
 
 
+@log_notification("STATUS_CHANGE")
 async def send_status_change_notification(
     bot: Bot,
     user: User,
@@ -818,6 +825,7 @@ async def send_status_change_notification(
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
 
+@log_notification("MEASURER_CHANGE")
 async def send_measurer_change_notification(
     bot: Bot,
     old_measurer: Optional[User],
@@ -951,6 +959,7 @@ async def send_measurer_change_notification(
             logger.error(f"Ошибка отправки уведомления менеджеру: {e}")
 
 
+@log_notification("COMPLETION")
 async def send_completion_notification(
     bot: Bot,
     measurement: Measurement,

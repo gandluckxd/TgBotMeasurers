@@ -96,7 +96,14 @@
       "Bash(py update_measurer_filters.py:*)",
       "Bash(cmd.exe:*)",
       "Bash(python test_phone_formatter.py:*)",
-      "Bash(py -3.12 test_phone_formatter.py:*)"
+      "Bash(py -3.12 test_phone_formatter.py:*)",
+      "Bash(wc:*)",
+      "Bash(python -c \"\nimport re\n\n# Читаем файл\nwith open(''bot/utils/notifications.py'', ''r'', encoding=''utf-8'') as f:\n    content = f.read()\n\n# Находим все функции send_ и добавляем декораторы\nfunctions = [\n    (''send_assignment_notification_to_measurer'', ''ASSIGNMENT_TO_MEASURER''),\n    (''send_assignment_notification_to_manager'', ''ASSIGNMENT_TO_MANAGER''),\n    (''send_new_measurement_notification_to_observers'', ''NEW_MEASUREMENT_TO_OBSERVERS''),\n    (''send_assignment_notification_to_observers'', ''ASSIGNMENT_TO_OBSERVERS''),\n    (''send_status_change_notification'', ''STATUS_CHANGE''),\n    (''send_measurer_change_notification'', ''MEASURER_CHANGE''),\n    (''send_completion_notification'', ''COMPLETION'')\n]\n\nfor func_name, notif_type in functions:\n    # Ищем функцию без декоратора\n    pattern = f''(^async def {func_name}\\\\()''\n    replacement = f''@log_notification(\"\"{notif_type}\"\")\\n\\1''\n    content = re.sub(pattern, replacement, content, flags=re.MULTILINE)\n\n# Сохраняем\nwith open(''bot/utils/notifications.py'', ''w'', encoding=''utf-8'') as f:\n    f.write(content)\n\nprint(''✅ Декораторы добавлены ко всем функциям уведомлений'')\n\")",
+      "Bash(.venvScriptsactivate)",
+      "Bash(./venv/Scripts/python.exe -c:*)",
+      "Bash(timeout 30 ./venv/Scripts/python.exe:*)",
+      "Bash(ls:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []

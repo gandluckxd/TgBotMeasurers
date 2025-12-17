@@ -19,7 +19,7 @@ from bot.handlers import (
     zones_router,
     measurer_names_router
 )
-from bot.middlewares import RoleCheckMiddleware
+from bot.middlewares import RoleCheckMiddleware, LoggingMiddleware
 
 
 async def on_startup(bot: Bot):
@@ -116,20 +116,9 @@ async def on_shutdown(bot: Bot):
 
 async def main():
     """Главная функция запуска бота"""
-    # Настройка логирования
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level=settings.log_level
-    )
-    logger.add(
-        "logs/bot_{time:YYYY-MM-DD}.log",
-        rotation="00:00",
-        retention="30 days",
-        level=settings.log_level,
-        encoding="utf-8"
-    )
+    # Настройка централизованного логирования
+    from bot.utils.logger_config import setup_logging
+    setup_logging()
 
     logger.info("=" * 50)
     logger.info("Запуск Telegram бота для управления замерами")
@@ -144,7 +133,11 @@ async def main():
     # Создаем диспетчер
     dp = Dispatcher()
 
-    # Регистрируем middleware для проверки ролей
+    # Регистрируем middleware (LoggingMiddleware ПЕРВЫМ для логирования всего)
+    dp.message.middleware(LoggingMiddleware())
+    dp.callback_query.middleware(LoggingMiddleware())
+
+    # Затем RoleCheckMiddleware для проверки ролей
     dp.message.middleware(RoleCheckMiddleware())
     dp.callback_query.middleware(RoleCheckMiddleware())
 
