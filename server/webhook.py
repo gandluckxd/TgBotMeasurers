@@ -302,7 +302,7 @@ class WebhookProcessor:
             return
 
         from config import settings
-        from bot.utils.notifications import send_new_measurement_to_admin
+        from bot.utils.notifications import send_new_measurement_to_admin, send_new_measurement_notification_to_observers
         from database import get_db, get_all_supervisors
 
         # Отправляем уведомления администраторам из конфига
@@ -330,6 +330,16 @@ class WebhookProcessor:
                     logger.info(f"Отправлено уведомление руководителю {supervisor.full_name} ({supervisor.telegram_id})")
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления руководителю {supervisor.telegram_id}: {e}")
+
+        # Отправляем уведомления наблюдателям (БЕЗ информации об автоматическом распределении)
+        try:
+            await send_new_measurement_notification_to_observers(
+                bot=self.bot,
+                measurement=measurement
+            )
+            logger.info("Отправлены уведомления наблюдателям о новом замере")
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомлений наблюдателям: {e}")
 
     async def _notify_measurer_new_assignment(self, measurement):
         """Отправка уведомления замерщику о назначении замера"""

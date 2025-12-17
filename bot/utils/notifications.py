@@ -502,6 +502,140 @@ async def send_assignment_notification_to_manager(
         logger.error(f"Неожиданная ошибка при отправке уведомления: {e}", exc_info=True)
 
 
+async def send_new_measurement_notification_to_observers(
+    bot: Bot,
+    measurement: Measurement
+):
+    """
+    Отправить уведомление наблюдателям о НОВОМ замере (без информации об автоназначении)
+
+    Args:
+        bot: Экземпляр бота
+        measurement: Объект замера
+    """
+    from database import get_db, create_notification, get_all_observers
+    from utils.timezone_utils import format_moscow_time
+
+    try:
+        # Получаем всех активных наблюдателей
+        async for session in get_db():
+            observers = await get_all_observers(session)
+
+            if not observers:
+                logger.info("Нет активных наблюдателей для уведомления")
+                return
+
+            # Формируем текст уведомления (БЕЗ информации об автоматическом распределении)
+            text = "🆕 <b>Новый замер (Наблюдатель)</b>\n\n"
+            text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
+
+            # === БЛОК 1: Основная информация о заказе ===
+            text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+
+            if measurement.order_number:
+                text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+            if measurement.address:
+                text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+            else:
+                text += f"📍 <b>Адрес:</b> Не указан\n"
+
+            if measurement.delivery_zone:
+                text += f"🚚 <b>Зона доставки:</b> {measurement.delivery_zone}\n"
+
+            text += "\n"
+
+            # === БЛОК 2: Контактные данные ===
+            if measurement.contact_name:
+                text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
+            else:
+                text += f"👤 <b>Контакт:</b> Не указан\n"
+
+            if measurement.contact_phone:
+                from utils.phone_formatter import format_phone_for_telegram
+                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
+
+            if measurement.responsible_user_name:
+                text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+
+            text += "\n"
+
+            # === БЛОК 3: Параметры окон (если есть) ===
+            has_window_info = False
+            if measurement.windows_count:
+                text += f"🪟 <b>Количество окон:</b> {measurement.windows_count}\n"
+                has_window_info = True
+
+            if measurement.windows_area:
+                text += f"📐 <b>Площадь окон:</b> {measurement.windows_area} м²\n"
+                has_window_info = True
+
+            if has_window_info:
+                text += "\n"
+
+            # === БЛОК 4: Статус (БЕЗ информации о замерщике!) ===
+            text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
+
+            # Добавляем информацию о менеджере, если есть
+            if measurement.manager:
+                text += f"💼 <b>Менеджер:</b> {measurement.manager.full_name}\n"
+
+            # === БЛОК 5: Временные метки ===
+            text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {measurement.amocrm_lead_id}\n"
+
+            if measurement.created_at:
+                text += f"📅 <b>Создано:</b> {format_moscow_time(measurement.created_at)}\n"
+
+            text += "\n⏳ <i>Ожидает подтверждения распределения...</i>"
+
+            # Отправляем уведомление каждому наблюдателю
+            for observer in observers:
+                try:
+                    await bot.send_message(
+                        chat_id=observer.telegram_id,
+                        text=text,
+                        parse_mode="HTML"
+                    )
+
+                    # Сохраняем уведомление в БД
+                    async for session in get_db():
+                        await create_notification(
+                            session=session,
+                            recipient_id=observer.id,
+                            message_text=text,
+                            notification_type="observer_new_measurement",
+                            measurement_id=measurement.id,
+                            is_sent=True
+                        )
+                        break
+
+                    logger.info(f"Отправлено уведомление о новом замере наблюдателю {observer.telegram_id} ({observer.full_name})")
+
+                except TelegramAPIError as e:
+                    logger.error(f"Ошибка отправки уведомления наблюдателю {observer.telegram_id}: {e}")
+                    # Сохраняем неудачную попытку в БД
+                    try:
+                        async for session in get_db():
+                            await create_notification(
+                                session=session,
+                                recipient_id=observer.id,
+                                message_text=text,
+                                notification_type="observer_new_measurement",
+                                measurement_id=measurement.id,
+                                is_sent=False
+                            )
+                            break
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.error(f"Неожиданная ошибка при отправке уведомления наблюдателю {observer.telegram_id}: {e}", exc_info=True)
+
+            break  # Выходим из цикла get_db()
+
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомлений наблюдателям: {e}", exc_info=True)
+
+
 async def send_assignment_notification_to_observers(
     bot: Bot,
     measurement: Measurement,

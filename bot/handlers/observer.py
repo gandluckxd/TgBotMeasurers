@@ -29,9 +29,10 @@ async def cmd_start_observer(message: Message):
         text += "Вы вошли как <b>Наблюдатель</b>\n\n"
         text += "📋 Используйте кнопки ниже для просмотра замеров:\n\n"
         text += "Доступные команды:\n"
+        text += "• ⏳ Ожидают подтверждения - новые замеры в ожидании распределения\n"
         text += "• 📊 Все замеры - просмотр всех замеров всех замерщиков\n"
         text += "• 🔄 Замеры в работе - текущие активные замеры всех замерщиков\n\n"
-        text += "❗️ <b>Важно:</b> Вы получаете уведомления о всех распределенных замерах."
+        text += "❗️ <b>Важно:</b> Вы получаете уведомления о всех новых замерах и распределениях."
 
         # Reply клавиатура
         from bot.keyboards.reply import get_observer_commands_keyboard
@@ -78,6 +79,30 @@ async def cmd_all_measurements(message: Message):
             await message.answer(msg_text, parse_mode="HTML")
 
 
+@observer_router.message(Command("pending_confirmation"), IsObserver())
+async def cmd_pending_confirmation(message: Message):
+    """Показать замеры ожидающие подтверждения"""
+    logger.info(f"Observer cmd_pending_confirmation: user_id={message.from_user.id}")
+
+    async for session in get_db():
+        # Получаем все замеры ожидающие подтверждения (статус PENDING_CONFIRMATION)
+        measurements = await get_measurements_by_status(session, MeasurementStatus.PENDING_CONFIRMATION)
+
+        if not measurements:
+            await message.answer("✅ Нет замеров ожидающих подтверждения")
+            return
+
+        await message.answer(f"⏳ <b>Замеры ожидающие подтверждения ({len(measurements)}):</b>", parse_mode="HTML")
+
+        # Отправляем каждый замер отдельным сообщением
+        for measurement in measurements:
+            # Для наблюдателя НЕ показываем информацию об автоматическом распределении
+            msg_text = measurement.get_info_text(detailed=True, show_admin_info=False)
+
+            # Для наблюдателя показываем только информацию просмотра (без кнопок действий)
+            await message.answer(msg_text, parse_mode="HTML")
+
+
 @observer_router.message(Command("pending"), IsObserver())
 async def cmd_pending_measurements(message: Message):
     """Показать замеры в работе всех замерщиков"""
@@ -104,6 +129,12 @@ async def cmd_pending_measurements(message: Message):
 # ========================================
 # Обработчики текстовых кнопок (Reply Keyboard)
 # ========================================
+
+@observer_router.message(F.text == "⏳ Ожидают подтверждения", IsObserver())
+async def handle_pending_confirmation_button(message: Message):
+    """Обработка нажатия кнопки Ожидают подтверждения"""
+    await cmd_pending_confirmation(message)
+
 
 @observer_router.message(F.text == "🔄 Замеры в работе", IsObserver())
 async def handle_pending_button(message: Message):
