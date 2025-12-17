@@ -211,7 +211,8 @@ class WebhookProcessor:
                     values = field.get("values", [])
 
                     if field_code == "PHONE" and values:
-                        contact_phone = values[0].get("value")
+                        from utils.phone_formatter import normalize_phone
+                        contact_phone = normalize_phone(values[0].get("value"))
                         break
 
             # Получаем кастомные поля сделки по ID

@@ -94,7 +94,9 @@
       "Bash(cmd.exe /c \"venv\\Scripts\\python.exe test_filters.py 2>&1\")",
       "Bash(py test_filters.py:*)",
       "Bash(py update_measurer_filters.py:*)",
-      "Bash(cmd.exe:*)"
+      "Bash(cmd.exe:*)",
+      "Bash(python test_phone_formatter.py:*)",
+      "Bash(py -3.12 test_phone_formatter.py:*)"
     ],
     "deny": [],
     "ask": []

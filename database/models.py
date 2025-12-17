@@ -238,7 +238,8 @@ class Measurement(Base):
             text += f"👤 <b>Контакт:</b> {self.contact_name}\n"
 
         if self.contact_phone:
-            text += f"📞 <b>Телефон:</b> {self.contact_phone}\n"
+            from utils.phone_formatter import format_phone_for_telegram
+            text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(self.contact_phone)}\n"
 
         # Ответственный в AmoCRM
         if self.responsible_user_name:

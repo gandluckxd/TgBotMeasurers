@@ -77,8 +77,9 @@ def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
             values = field.get("values", [])
 
             if values and field_code == "PHONE":
+                from utils.phone_formatter import format_phone_for_telegram
                 value = values[0].get("value")
-                text += f"📞 <b>Телефон:</b> {value}\n"
+                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(value)}\n"
                 break
     else:
         text += "👤 <b>Контакт:</b> Не указан\n"
@@ -308,7 +309,8 @@ async def send_assignment_notification_to_measurer(
             text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
 
         if measurement.contact_phone:
-            text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+            from utils.phone_formatter import format_phone_for_telegram
+            text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
 
         if measurement.responsible_user_name:
             text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
@@ -431,7 +433,8 @@ async def send_assignment_notification_to_manager(
             text += f"👤 <b>Контакт:</b> Не указан\n"
 
         if measurement.contact_phone:
-            text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+            from utils.phone_formatter import format_phone_for_telegram
+            text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
 
         text += "\n"
 
@@ -556,7 +559,8 @@ async def send_assignment_notification_to_observers(
                 text += f"👤 <b>Контакт:</b> Не указан\n"
 
             if measurement.contact_phone:
-                text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+                from utils.phone_formatter import format_phone_for_telegram
+                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
 
             if measurement.responsible_user_name:
                 text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
@@ -761,7 +765,8 @@ async def send_measurer_change_notification(
                 text += f"👤 <b>Контакт:</b> Не указан\n"
 
             if measurement.contact_phone:
-                text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+                from utils.phone_formatter import format_phone_for_telegram
+                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
 
             text += "\n"
 
@@ -855,7 +860,8 @@ async def send_completion_notification(
         text += f"👤 <b>Контакт:</b> Не указан\n"
 
     if measurement.contact_phone:
-        text += f"📞 <b>Телефон:</b> {measurement.contact_phone}\n"
+        from utils.phone_formatter import format_phone_for_telegram
+        text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
 
     if measurement.responsible_user_name:
         text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
