@@ -17,12 +17,13 @@ from bot.keyboards.inline import (
     get_main_menu_keyboard,
     get_back_button
 )
+from bot.filters import IsManager
 
 # Создаем роутер для команд менеджера
 manager_router = Router()
 
 
-@manager_router.message(Command("start"))
+@manager_router.message(Command("start"), IsManager())
 async def cmd_start_manager(message: Message):
     """Обработчик команды /start для менеджера"""
     async for session in get_db():
@@ -39,11 +40,6 @@ async def cmd_start_manager(message: Message):
                 role=UserRole.MANAGER
             )
 
-        # Проверяем роль
-        if user.role != UserRole.MANAGER:
-            # Это администратор или замерщик, пропускаем
-            return
-
         text = f"👋 Добро пожаловать, <b>{user.full_name}</b>!\n\n"
         text += "Вы вошли как <b>Менеджер</b>\n\n"
         text += "📋 Используйте меню ниже для отслеживания ваших заказов:\n\n"
@@ -58,28 +54,19 @@ async def cmd_start_manager(message: Message):
         await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
 
-@manager_router.message(Command("menu"))
+@manager_router.message(Command("menu"), IsManager())
 async def cmd_menu_manager(message: Message):
     """Обработчик команды /menu для менеджера"""
     async for session in get_db():
-        user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MANAGER:
-            return
-
         keyboard = get_main_menu_keyboard("manager")
         await message.answer("📋 <b>Главное меню менеджера:</b>", reply_markup=keyboard, parse_mode="HTML")
 
 
-@manager_router.message(Command("orders"))
+@manager_router.message(Command("orders"), IsManager())
 async def cmd_my_orders(message: Message):
     """Показать мои заказы"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MANAGER:
-            await message.answer("⚠️ У вас нет доступа к этой команде.")
-            return
 
         # Получаем все заказы менеджера
         measurements = await get_measurements_by_manager(session, user.id)
@@ -98,7 +85,7 @@ async def cmd_my_orders(message: Message):
         await message.answer(text, parse_mode="HTML")
 
 
-@manager_router.callback_query(F.data.startswith("manager:"))
+@manager_router.callback_query(F.data.startswith("manager:"), IsManager())
 async def handle_manager_measurements(callback: CallbackQuery):
     """Обработка запросов заказов менеджера"""
     try:
@@ -106,10 +93,6 @@ async def handle_manager_measurements(callback: CallbackQuery):
 
         async for session in get_db():
             user = await get_user_by_telegram_id(session, callback.from_user.id)
-
-            if not user or user.role != UserRole.MANAGER:
-                await callback.answer("⚠️ У вас нет доступа", show_alert=True)
-                return
 
             # Получаем заказы менеджера
             if filter_type == "all":
@@ -158,14 +141,11 @@ async def handle_manager_measurements(callback: CallbackQuery):
 # Обработчики текстовых кнопок (Reply Keyboard)
 # ========================================
 
-@manager_router.message(F.text == "📊 Мои заказы")
+@manager_router.message(F.text == "📊 Мои заказы", IsManager())
 async def handle_all_measurements_button(message: Message):
     """Обработка нажатия кнопки Мои заказы"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MANAGER:
-            return
 
         # Получаем все заказы менеджера
         measurements = await get_measurements_by_manager(session, user.id)
@@ -184,14 +164,11 @@ async def handle_all_measurements_button(message: Message):
         await message.answer(text, parse_mode="HTML")
 
 
-@manager_router.message(F.text == "🔄 Заказы в работе")
+@manager_router.message(F.text == "🔄 Заказы в работе", IsManager())
 async def handle_in_progress_measurements_button(message: Message):
     """Обработка нажатия кнопки Заказы в работе"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MANAGER:
-            return
 
         # Получаем замеры в работе (pending + assigned + in_progress)
         # Получаем замеры в работе (только ASSIGNED)
@@ -213,16 +190,10 @@ async def handle_in_progress_measurements_button(message: Message):
         await message.answer(text, parse_mode="HTML")
 
 
-@manager_router.message(Command("hide"))
+@manager_router.message(Command("hide"), IsManager())
 async def cmd_hide_keyboard(message: Message):
     """Скрыть клавиатуру команд"""
     async for session in get_db():
-        user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MANAGER:
-            await message.answer("⚠️ У вас нет доступа к этой команде.")
-            return
-
         from bot.keyboards.reply import remove_keyboard
 
         await message.answer(

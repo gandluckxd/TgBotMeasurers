@@ -84,7 +84,17 @@
       "Bash(py test_webhook.py --help)",
       "Bash(cat:*)",
       "Bash(py -m py_compile:*)",
-      "Bash(py migrations/apply_dealer_migration.py)"
+      "Bash(py migrations/apply_dealer_migration.py)",
+      "Bash(py update_admin_filters.py:*)",
+      "Bash(py cleanup_admin_checks.py:*)",
+      "Bash(del update_admin_filters.py cleanup_admin_checks.py)",
+      "Bash(venvScriptspython.exe -c \"from database.models import UserRole; print(''Admin:'', UserRole.ADMIN); print(''Supervisor:'', UserRole.SUPERVISOR)\")",
+      "Bash(cmd.exe /c \"venv\\Scripts\\python.exe -m py_compile:*)",
+      "Bash(cmd.exe /c \"venv\\Scripts\\python.exe test_filters.py\")",
+      "Bash(cmd.exe /c \"venv\\Scripts\\python.exe test_filters.py 2>&1\")",
+      "Bash(py test_filters.py:*)",
+      "Bash(py update_measurer_filters.py:*)",
+      "Bash(cmd.exe:*)"
     ],
     "deny": [],
     "ask": []

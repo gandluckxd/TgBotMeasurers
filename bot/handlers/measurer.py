@@ -25,12 +25,13 @@ from bot.utils.notifications import (
     send_status_change_notification,
     send_completion_notification
 )
+from bot.filters import IsMeasurer
 
 # Создаем роутер для команд замерщика
 measurer_router = Router()
 
 
-@measurer_router.message(Command("start"))
+@measurer_router.message(Command("start"), IsMeasurer())
 async def cmd_start_measurer(message: Message):
     """Обработчик команды /start для замерщика"""
     async for session in get_db():
@@ -47,11 +48,6 @@ async def cmd_start_measurer(message: Message):
                 role=UserRole.MEASURER
             )
 
-        # Проверяем роль
-        if user.role != UserRole.MEASURER:
-            # Это администратор или менеджер, пропускаем
-            return
-
         text = f"👋 Добро пожаловать, <b>{user.full_name}</b>!\n\n"
         text += "Вы вошли как <b>Замерщик</b>\n\n"
         text += "📋 Используйте меню ниже для управления вашими замерами:\n\n"
@@ -66,29 +62,20 @@ async def cmd_start_measurer(message: Message):
         await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
 
-@measurer_router.message(Command("menu"))
+@measurer_router.message(Command("menu"), IsMeasurer())
 async def cmd_menu_measurer(message: Message):
     """Обработчик команды /menu для замерщика"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MEASURER:
-            return
-
         keyboard = get_main_menu_keyboard("measurer")
         await message.answer("📋 <b>Главное меню замерщика:</b>", reply_markup=keyboard, parse_mode="HTML")
 
 
-@measurer_router.message(Command("my"))
+@measurer_router.message(Command("my"), IsMeasurer())
 async def cmd_my_measurements(message: Message):
     """Показать мои замеры"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MEASURER:
-            await message.answer("⚠️ У вас нет доступа к этой команде.")
-            return
-
         # Получаем все активные замеры замерщика
         measurements = await get_measurements_by_measurer(session, user.id)
 
@@ -117,7 +104,7 @@ async def cmd_my_measurements(message: Message):
             await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@measurer_router.callback_query(F.data.startswith("status:"))
+@measurer_router.callback_query(F.data.startswith("status:"), IsMeasurer())
 async def handle_status_change(callback: CallbackQuery):
     """Обработка изменения статуса замера"""
     try:
@@ -213,7 +200,7 @@ async def handle_status_change(callback: CallbackQuery):
         await callback.answer("❌ Ошибка при изменении статуса", show_alert=True)
 
 
-@measurer_router.callback_query(F.data.startswith("my:"))
+@measurer_router.callback_query(F.data.startswith("my:"), IsMeasurer())
 async def handle_my_measurements(callback: CallbackQuery):
     """Обработка запросов моих замеров"""
     try:
@@ -221,10 +208,6 @@ async def handle_my_measurements(callback: CallbackQuery):
 
         async for session in get_db():
             user = await get_user_by_telegram_id(session, callback.from_user.id)
-
-            if not user or user.role != UserRole.MEASURER:
-                await callback.answer("⚠️ У вас нет доступа", show_alert=True)
-                return
 
             # Получаем замеры замерщика
             if status_filter == "all":
@@ -280,7 +263,7 @@ async def handle_my_measurements(callback: CallbackQuery):
         await callback.answer("❌ Ошибка при получении замеров", show_alert=True)
 
 
-@measurer_router.callback_query(F.data == "menu")
+@measurer_router.callback_query(F.data == "menu", IsMeasurer())
 async def handle_back_to_menu(callback: CallbackQuery):
     """Возврат в главное меню"""
     async for session in get_db():
@@ -310,15 +293,11 @@ async def handle_back_to_menu(callback: CallbackQuery):
 # Обработчики текстовых кнопок (Reply Keyboard)
 # ========================================
 
-@measurer_router.message(F.text == "📊 Мои замеры")
+@measurer_router.message(F.text == "📊 Мои замеры", IsMeasurer())
 async def handle_all_measurements_button(message: Message):
     """Обработка нажатия кнопки Мои замеры"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MEASURER:
-            return
-
         # Получаем все замеры замерщика
         measurements = await get_measurements_by_measurer(session, user.id)
 
@@ -341,15 +320,11 @@ async def handle_all_measurements_button(message: Message):
             await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@measurer_router.message(F.text == "🔄 Мои замеры в работе")
+@measurer_router.message(F.text == "🔄 Мои замеры в работе", IsMeasurer())
 async def handle_in_progress_measurements_button(message: Message):
     """Обработка нажатия кнопки Мои замеры в работе"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MEASURER:
-            return
-
         # Получаем замеры в работе (статус ASSIGNED)
         measurements = await get_measurements_by_measurer(
             session, user.id, MeasurementStatus.ASSIGNED
@@ -374,16 +349,11 @@ async def handle_in_progress_measurements_button(message: Message):
             await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@measurer_router.message(Command("hide"))
+@measurer_router.message(Command("hide"), IsMeasurer())
 async def cmd_hide_keyboard(message: Message):
     """Скрыть клавиатуру команд"""
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.MEASURER:
-            await message.answer("⚠️ У вас нет доступа к этой команде.")
-            return
-
         from bot.keyboards.reply import remove_keyboard
 
         await message.answer(

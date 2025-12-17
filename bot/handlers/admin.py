@@ -42,6 +42,7 @@ from bot.utils.notifications import (
     send_measurer_change_notification,
     send_assignment_notification_to_observers
 )
+from bot.filters import HasAdminAccess
 from config import settings
 
 # Создаем роутер для администраторских команд
@@ -65,14 +66,9 @@ def is_admin_or_supervisor(telegram_id: int) -> bool:
 is_admin = is_admin_or_supervisor
 
 
-@admin_router.message(Command("start"))
-async def cmd_start(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("start"), HasAdminAccess())
+async def cmd_start(message: Message, user_role: UserRole = None):
     """Обработчик команды /start для администратора и руководителя"""
-    # Проверяем права доступа (админ или руководитель)
-    # Если не админ и не руководитель - пропускаем обработку (для других ролей)
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
 
@@ -119,13 +115,9 @@ async def cmd_start(message: Message, has_admin_access: bool = False):
         )
 
 
-@admin_router.message(Command("menu"))
-async def cmd_menu(message: Message, has_admin_access: bool = False, user_role: UserRole = None):
+@admin_router.message(Command("menu"), HasAdminAccess())
+async def cmd_menu(message: Message, user_role: UserRole = None):
     """Обработчик команды /menu для администратора и руководителя"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
-
     # Определяем роль для клавиатуры
     role_for_keyboard = "supervisor" if user_role == UserRole.SUPERVISOR else "admin"
     keyboard = get_main_menu_keyboard(role_for_keyboard)
@@ -134,13 +126,9 @@ async def cmd_menu(message: Message, has_admin_access: bool = False, user_role: 
     await message.answer(f"📋 <b>{menu_title}:</b>", reply_markup=keyboard, parse_mode="HTML")
 
 
-@admin_router.message(Command("measurers"))
-async def cmd_measurers(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("measurers"), HasAdminAccess())
+async def cmd_measurers(message: Message):
     """Показать список замерщиков"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
-
     async for session in get_db():
         measurers = await get_all_measurers(session)
 
@@ -158,12 +146,10 @@ async def cmd_measurers(message: Message, has_admin_access: bool = False):
         await message.answer(text, parse_mode="HTML")
 
 
-@admin_router.message(Command("pending"))
-async def cmd_pending(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("pending"), HasAdminAccess())
+async def cmd_pending(message: Message):
     """Показать замеры в работе (со статусом ASSIGNED)"""
-    # Если не админ и не руководитель - пропускаем обработку (для других ролей)
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
+    import asyncio
 
     async for session in get_db():
         measurements = await get_measurements_by_status(session, MeasurementStatus.ASSIGNED)
@@ -175,7 +161,7 @@ async def cmd_pending(message: Message, has_admin_access: bool = False):
         await message.answer(f"🔄 <b>Замеры в работе ({len(measurements)}):</b>", parse_mode="HTML")
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
-        for measurement in measurements:
+        for i, measurement in enumerate(measurements):
             msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
@@ -186,13 +172,15 @@ async def cmd_pending(message: Message, has_admin_access: bool = False):
 
             await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
+            # Задержка после каждого 3-го сообщения, чтобы избежать Flood Control
+            if (i + 1) % 3 == 0 and i + 1 < len(measurements):
+                await asyncio.sleep(0.5)
 
-@admin_router.message(Command("pending_confirmation"))
-async def cmd_pending_confirmation(message: Message, has_admin_access: bool = False):
+
+@admin_router.message(Command("pending_confirmation"), HasAdminAccess())
+async def cmd_pending_confirmation(message: Message):
     """Показать замеры ожидающие подтверждения (со статусом PENDING_CONFIRMATION)"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
+    import asyncio
 
     async for session in get_db():
         measurements = await get_measurements_by_status(session, MeasurementStatus.PENDING_CONFIRMATION)
@@ -204,7 +192,7 @@ async def cmd_pending_confirmation(message: Message, has_admin_access: bool = Fa
         await message.answer(f"⏳ <b>Замеры ожидающие подтверждения ({len(measurements)}):</b>", parse_mode="HTML")
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
-        for measurement in measurements:
+        for i, measurement in enumerate(measurements):
             msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
@@ -215,13 +203,15 @@ async def cmd_pending_confirmation(message: Message, has_admin_access: bool = Fa
 
             await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
+            # Задержка после каждого 3-го сообщения, чтобы избежать Flood Control
+            if (i + 1) % 3 == 0 and i + 1 < len(measurements):
+                await asyncio.sleep(0.5)
 
-@admin_router.message(Command("all"))
-async def cmd_all(message: Message, has_admin_access: bool = False):
+
+@admin_router.message(Command("all"), HasAdminAccess())
+async def cmd_all(message: Message):
     """Показать все замеры"""
-    # Если не админ и не руководитель - пропускаем обработку (для других ролей)
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
+    import asyncio
 
     async for session in get_db():
         from sqlalchemy import select
@@ -248,7 +238,7 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
         await message.answer(f"📊 <b>Все замеры (последние 20):</b>", parse_mode="HTML")
 
         # Отправляем каждый замер отдельным сообщением с inline кнопкой
-        for measurement in measurements:
+        for i, measurement in enumerate(measurements):
             msg_text = measurement.get_info_text(detailed=True, show_admin_info=True)
 
             keyboard = get_measurement_actions_keyboard(
@@ -259,18 +249,18 @@ async def cmd_all(message: Message, has_admin_access: bool = False):
 
             await message.answer(msg_text, reply_markup=keyboard, parse_mode="HTML")
 
+            # Задержка после каждого 3-го сообщения, чтобы избежать Flood Control
+            if (i + 1) % 3 == 0 and i + 1 < len(measurements):
+                await asyncio.sleep(0.5)
 
-@admin_router.message(Command("measurement"))
-async def cmd_measurement(message: Message, has_admin_access: bool = False):
+
+@admin_router.message(Command("measurement"), HasAdminAccess())
+async def cmd_measurement(message: Message):
     """Показать информацию о замере по ID
 
     Использование: /measurement <ID замера>
     Пример: /measurement 123
     """
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
-
     # Парсим ID замера из команды
     args = message.text.split()
     if len(args) < 2:
@@ -306,17 +296,13 @@ async def cmd_measurement(message: Message, has_admin_access: bool = False):
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@admin_router.message(Command("assign"))
-async def cmd_assign(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("assign"), HasAdminAccess())
+async def cmd_assign(message: Message):
     """Назначить замерщика на замер по ID
 
     Использование: /assign <ID замера>
     Пример: /assign 123
     """
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
-
     # Парсим ID замера из команды
     args = message.text.split()
     if len(args) < 2:
@@ -355,12 +341,10 @@ async def cmd_assign(message: Message, has_admin_access: bool = False):
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@admin_router.callback_query(F.data.startswith("assign:"))
-async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("assign:"), HasAdminAccess())
+async def handle_assign_measurer(callback: CallbackQuery):
     """Обработка назначения замерщика на замер"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         # Парсим callback data: assign:measurement_id:measurer_id
@@ -539,12 +523,10 @@ async def handle_assign_measurer(callback: CallbackQuery, has_admin_access: bool
         await callback.answer("❌ Ошибка при назначении замерщика", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("confirm_assignment:"))
-async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("confirm_assignment:"), HasAdminAccess())
+async def handle_confirm_assignment(callback: CallbackQuery):
     """Обработка подтверждения распределения замерщика"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         # Парсим callback data: confirm_assignment:measurement_id
@@ -749,12 +731,10 @@ async def handle_confirm_assignment(callback: CallbackQuery, has_admin_access: b
         await callback.answer("❌ Ошибка при подтверждении распределения", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("change_measurer:"))
-async def handle_change_measurer(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("change_measurer:"), HasAdminAccess())
+async def handle_change_measurer(callback: CallbackQuery):
     """Обработка изменения замерщика"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         # Парсим callback data: change_measurer:measurement_id
@@ -787,12 +767,10 @@ async def handle_change_measurer(callback: CallbackQuery, has_admin_access: bool
         await callback.answer("❌ Ошибка при изменении замерщика", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("list:"))
-async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("list:"), HasAdminAccess())
+async def handle_list(callback: CallbackQuery):
     """Обработка запросов списков замеров"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         list_type = callback.data.split(":")[1]
@@ -873,51 +851,40 @@ async def handle_list(callback: CallbackQuery, has_admin_access: bool = False):
 # Обработчики текстовых кнопок (Reply Keyboard)
 # ========================================
 
-@admin_router.message(F.text == "📋 Главное меню")
-async def handle_main_menu_button(message: Message, has_admin_access: bool = False, user_role: UserRole = None):
+@admin_router.message(F.text == "📋 Главное меню", HasAdminAccess())
+async def handle_main_menu_button(message: Message, user_role: UserRole = None):
     """Обработка нажатия кнопки Главное меню"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_menu(message, has_admin_access=has_admin_access, user_role=user_role)
+    await cmd_menu(message, user_role=user_role)
 
 
-@admin_router.message(F.text == "👤 Пользователи")
-async def handle_users_button(message: Message, has_admin_access: bool = False):
+@admin_router.message(F.text == "👤 Пользователи", HasAdminAccess())
+async def handle_users_button(message: Message):
     """Обработка нажатия кнопки Пользователи"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_users(message, has_admin_access=has_admin_access)
+    await cmd_users(message)
 
 
-@admin_router.message(F.text == "🔄 Замеры в работе")
-async def handle_in_work_button(message: Message, has_admin_access: bool = False):
+@admin_router.message(F.text == "🔄 Замеры в работе", HasAdminAccess())
+async def handle_in_work_button(message: Message):
     """Обработка нажатия кнопки Замеры в работе"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_pending(message, has_admin_access=has_admin_access)
+    await cmd_pending(message)
 
 
-@admin_router.message(F.text == "📊 Все замеры")
-async def handle_all_button(message: Message, has_admin_access: bool = False):
+@admin_router.message(F.text == "📊 Все замеры", HasAdminAccess())
+async def handle_all_button(message: Message):
     """Обработка нажатия кнопки Все замеры"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_all(message, has_admin_access=has_admin_access)
+    await cmd_all(message)
 
 
-@admin_router.message(F.text == "⏳ Ожидают подтверждения")
-async def handle_pending_confirmation_button(message: Message, has_admin_access: bool = False):
+@admin_router.message(F.text == "⏳ Ожидают подтверждения", HasAdminAccess())
+async def handle_pending_confirmation_button(message: Message):
     """Обработка нажатия кнопки Ожидают подтверждения"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_pending_confirmation(message, has_admin_access=has_admin_access)
+    await cmd_pending_confirmation(message)
 
 
-@admin_router.message(F.text == "🗺 Управление зонами")
-async def handle_zones_button(message: Message, has_admin_access: bool = False):
+@admin_router.message(F.text == "🗺 Управление зонами", HasAdminAccess())
+async def handle_zones_button(message: Message):
     """Обработка нажатия кнопки Управление зонами"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
+
 
     from bot.keyboards.inline import get_zones_menu_keyboard
 
@@ -936,13 +903,9 @@ async def handle_zones_button(message: Message, has_admin_access: bool = False):
     )
 
 
-@admin_router.message(Command("hide"))
-async def cmd_hide_keyboard(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("hide"), HasAdminAccess())
+async def cmd_hide_keyboard(message: Message):
     """Скрыть клавиатуру команд"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
-
     from bot.keyboards.reply import remove_keyboard
 
     await message.answer(
@@ -956,13 +919,9 @@ async def cmd_hide_keyboard(message: Message, has_admin_access: bool = False):
 # Управление пользователями
 # ========================================
 
-@admin_router.message(Command("users"))
-async def cmd_users(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("users"), HasAdminAccess())
+async def cmd_users(message: Message):
     """Показать список всех пользователей"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
-
     async for session in get_db():
         users = await get_all_users(session)
 
@@ -978,12 +937,10 @@ async def cmd_users(message: Message, has_admin_access: bool = False):
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@admin_router.callback_query(F.data == "users_list")
-async def handle_users_list(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data == "users_list", HasAdminAccess())
+async def handle_users_list(callback: CallbackQuery):
     """Показать список пользователей"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         async for session in get_db():
@@ -1002,12 +959,10 @@ async def handle_users_list(callback: CallbackQuery, has_admin_access: bool = Fa
         await callback.answer("❌ Ошибка при получении списка", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("users_page:"))
-async def handle_users_page(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("users_page:"), HasAdminAccess())
+async def handle_users_page(callback: CallbackQuery):
     """Переключение страницы списка пользователей"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         page = int(callback.data.split(":")[1])
@@ -1028,12 +983,10 @@ async def handle_users_page(callback: CallbackQuery, has_admin_access: bool = Fa
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_detail:"))
-async def handle_user_detail(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_detail:"), HasAdminAccess())
+async def handle_user_detail(callback: CallbackQuery):
     """Показать детали пользователя"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         user_id = int(callback.data.split(":")[1])
@@ -1092,12 +1045,10 @@ async def handle_user_detail(callback: CallbackQuery, has_admin_access: bool = F
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_change_role:"))
-async def handle_user_change_role(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_change_role:"), HasAdminAccess())
+async def handle_user_change_role(callback: CallbackQuery):
     """Показать меню выбора роли"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         user_id = int(callback.data.split(":")[1])
@@ -1124,12 +1075,10 @@ async def handle_user_change_role(callback: CallbackQuery, has_admin_access: boo
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_set_role:"))
-async def handle_user_set_role(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_set_role:"), HasAdminAccess())
+async def handle_user_set_role(callback: CallbackQuery):
     """Установить роль пользователя"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         parts = callback.data.split(":")
@@ -1205,12 +1154,10 @@ async def handle_user_set_role(callback: CallbackQuery, has_admin_access: bool =
         await callback.answer("❌ Ошибка при установке роли", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_toggle:"))
-async def handle_user_toggle(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_toggle:"), HasAdminAccess())
+async def handle_user_toggle(callback: CallbackQuery):
     """Переключить статус активности пользователя"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         user_id = int(callback.data.split(":")[1])
@@ -1264,12 +1211,10 @@ async def handle_user_toggle(callback: CallbackQuery, has_admin_access: bool = F
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data == "measurers_list")
-async def handle_measurers_list(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data == "measurers_list", HasAdminAccess())
+async def handle_measurers_list(callback: CallbackQuery):
     """Показать список замерщиков через callback"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         async for session in get_db():
@@ -1294,12 +1239,10 @@ async def handle_measurers_list(callback: CallbackQuery, has_admin_access: bool 
         await callback.answer("❌ Ошибка при получении списка", show_alert=True)
 
 
-@admin_router.callback_query(F.data == "admin_menu")
-async def handle_admin_menu(callback: CallbackQuery, has_admin_access: bool = False, user_role: UserRole = None):
+@admin_router.callback_query(F.data == "admin_menu", HasAdminAccess())
+async def handle_admin_menu(callback: CallbackQuery, user_role: UserRole = None):
     """Обработчик кнопки 'В главное меню'"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         # Удаляем текущее сообщение с замером
@@ -1332,12 +1275,10 @@ async def handle_admin_menu(callback: CallbackQuery, has_admin_access: bool = Fa
 # Управление AmoCRM аккаунтами
 # ========================================
 
-@admin_router.callback_query(F.data.startswith("user_amocrm:"))
-async def handle_user_amocrm(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_amocrm:"), HasAdminAccess())
+async def handle_user_amocrm(callback: CallbackQuery):
     """Показать меню управления AmoCRM аккаунтом пользователя"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         user_id = int(callback.data.split(":")[1])
@@ -1368,12 +1309,10 @@ async def handle_user_amocrm(callback: CallbackQuery, has_admin_access: bool = F
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_amocrm_select:"))
-async def handle_user_amocrm_select(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_amocrm_select:"), HasAdminAccess())
+async def handle_user_amocrm_select(callback: CallbackQuery):
     """Показать список пользователей AmoCRM для привязки"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         user_id = int(callback.data.split(":")[1])
@@ -1412,12 +1351,10 @@ async def handle_user_amocrm_select(callback: CallbackQuery, has_admin_access: b
         await callback.answer("❌ Ошибка загрузки пользователей", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_amocrm_page:"))
-async def handle_user_amocrm_page(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_amocrm_page:"), HasAdminAccess())
+async def handle_user_amocrm_page(callback: CallbackQuery):
     """Переключение страницы списка пользователей AmoCRM"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         parts = callback.data.split(":")
@@ -1453,12 +1390,10 @@ async def handle_user_amocrm_page(callback: CallbackQuery, has_admin_access: boo
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_amocrm_link:"))
-async def handle_user_amocrm_link(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_amocrm_link:"), HasAdminAccess())
+async def handle_user_amocrm_link(callback: CallbackQuery):
     """Привязать пользователя к аккаунту AmoCRM"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         parts = callback.data.split(":")
@@ -1506,12 +1441,10 @@ async def handle_user_amocrm_link(callback: CallbackQuery, has_admin_access: boo
         await callback.answer("❌ Ошибка при привязке аккаунта", show_alert=True)
 
 
-@admin_router.callback_query(F.data.startswith("user_amocrm_unlink:"))
-async def handle_user_amocrm_unlink(callback: CallbackQuery, has_admin_access: bool = False):
+@admin_router.callback_query(F.data.startswith("user_amocrm_unlink:"), HasAdminAccess())
+async def handle_user_amocrm_unlink(callback: CallbackQuery):
     """Отвязать пользователя от аккаунта AmoCRM"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+
 
     try:
         user_id = int(callback.data.split(":")[1])
@@ -1546,12 +1479,11 @@ async def handle_user_amocrm_unlink(callback: CallbackQuery, has_admin_access: b
 # Просмотр уведомлений
 # ========================================
 
-@admin_router.message(Command("notifications"))
-async def cmd_notifications(message: Message, has_admin_access: bool = False):
+@admin_router.message(Command("notifications"), HasAdminAccess())
+async def cmd_notifications(message: Message):
     """Показать последние отправленные уведомления"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        await message.answer("⚠️ У вас нет доступа к этой команде.")
-        return
+    import asyncio
+    import re
 
     async for session in get_db():
         notifications = await get_recent_notifications(session, limit=20)
@@ -1562,49 +1494,51 @@ async def cmd_notifications(message: Message, has_admin_access: bool = False):
 
         await message.answer(f"🔔 <b>Последние {len(notifications)} уведомлений:</b>", parse_mode="HTML")
 
-        # Отправляем каждое уведомление отдельным сообщением
-        for notification in notifications:
-            text = f"📨 <b>Уведомление #{notification.id}</b>\n\n"
+        # Группируем уведомления по 3 в одно сообщение, чтобы избежать Flood Control
+        batch_size = 3
+        notification_types = {
+            "assignment": "📋 Назначение",
+            "completion": "✅ Завершение",
+            "change": "🔄 Изменение",
+            "status_change": "🔄 Статус",
+            "new_lead": "🆕 Заявка",
+            "manager_notification": "💼 Менеджер"
+        }
 
-            # Получатель
-            recipient = notification.recipient
-            text += f"👤 <b>Кому:</b> {recipient.full_name}"
-            if recipient.username:
-                text += f" (@{recipient.username})"
-            text += "\n"
+        for i in range(0, len(notifications), batch_size):
+            batch = notifications[i:i + batch_size]
+            batch_texts = []
 
-            # Дата отправки
-            text += f"📅 <b>Когда:</b> {notification.sent_at.strftime('%d.%m.%Y %H:%M:%S')}\n"
+            for notification in batch:
+                text = f"📨 <b>#{notification.id}</b>\n"
+                text += f"👤 {notification.recipient.full_name}"
+                if notification.recipient.username:
+                    text += f" (@{notification.recipient.username})"
+                text += f"\n📅 {notification.sent_at.strftime('%d.%m %H:%M')}"
+                text += f"\n🏷 {notification_types.get(notification.notification_type, notification.notification_type)}"
 
-            # Тип уведомления
-            notification_types = {
-                "assignment": "📋 Назначение замера",
-                "completion": "✅ Завершение замера",
-                "change": "🔄 Изменение замерщика",
-                "status_change": "🔄 Изменение статуса",
-                "new_lead": "🆕 Новая заявка",
-                "manager_notification": "💼 Уведомление менеджера"
-            }
-            type_text = notification_types.get(notification.notification_type, notification.notification_type)
-            text += f"🏷 <b>Тип:</b> {type_text}\n\n"
+                # Краткий текст уведомления
+                clean_text = re.sub('<[^<]+?>', '', notification.message_text)
+                if len(clean_text) > 150:
+                    clean_text = clean_text[:150] + "..."
+                text += f"\n💬 {clean_text}"
 
-            # Текст уведомления (убираем HTML теги для краткости)
-            import re
-            clean_text = re.sub('<[^<]+?>', '', notification.message_text)
-            # Ограничиваем длину текста
-            if len(clean_text) > 500:
-                clean_text = clean_text[:500] + "..."
-            text += f"💬 <b>Текст:</b>\n{clean_text}"
+                batch_texts.append(text)
 
-            await message.answer(text, parse_mode="HTML")
+            # Объединяем уведомления разделителем
+            combined_text = "\n\n━━━━━━━━━━━━━━━\n\n".join(batch_texts)
+            await message.answer(combined_text, parse_mode="HTML")
+
+            # Небольшая задержка между пакетами, чтобы избежать Flood Control
+            if i + batch_size < len(notifications):
+                await asyncio.sleep(0.5)
 
 
-@admin_router.callback_query(F.data == "notifications")
-async def handle_notifications_callback(callback: CallbackQuery, has_admin_access: bool = False, user_role: UserRole = None):
+@admin_router.callback_query(F.data == "notifications", HasAdminAccess())
+async def handle_notifications_callback(callback: CallbackQuery, user_role: UserRole = None):
     """Обработчик кнопки 'Уведомления'"""
-    if not has_admin_access and not is_admin(callback.from_user.id):
-        await callback.answer("⚠️ У вас нет прав для этого действия", show_alert=True)
-        return
+    import asyncio
+    import re
 
     try:
         async for session in get_db():
@@ -1639,45 +1573,48 @@ async def handle_notifications_callback(callback: CallbackQuery, has_admin_acces
                 parse_mode="HTML"
             )
 
-            # Отправляем каждое уведомление отдельным сообщением
-            for notification in notifications:
-                text = f"📨 <b>Уведомление #{notification.id}</b>\n\n"
+            # Группируем уведомления по 3 в одно сообщение
+            batch_size = 3
+            notification_types = {
+                "assignment": "📋 Назначение",
+                "completion": "✅ Завершение",
+                "change": "🔄 Изменение",
+                "status_change": "🔄 Статус",
+                "new_lead": "🆕 Заявка",
+                "manager_notification": "💼 Менеджер"
+            }
 
-                # Получатель
-                recipient = notification.recipient
-                text += f"👤 <b>Кому:</b> {recipient.full_name}"
-                if recipient.username:
-                    text += f" (@{recipient.username})"
-                text += "\n"
+            for i in range(0, len(notifications), batch_size):
+                batch = notifications[i:i + batch_size]
+                batch_texts = []
 
-                # Дата отправки
-                text += f"📅 <b>Когда:</b> {notification.sent_at.strftime('%d.%m.%Y %H:%M:%S')}\n"
+                for notification in batch:
+                    text = f"📨 <b>#{notification.id}</b>\n"
+                    text += f"👤 {notification.recipient.full_name}"
+                    if notification.recipient.username:
+                        text += f" (@{notification.recipient.username})"
+                    text += f"\n📅 {notification.sent_at.strftime('%d.%m %H:%M')}"
+                    text += f"\n🏷 {notification_types.get(notification.notification_type, notification.notification_type)}"
 
-                # Тип уведомления
-                notification_types = {
-                    "assignment": "📋 Назначение замера",
-                    "completion": "✅ Завершение замера",
-                    "change": "🔄 Изменение замерщика",
-                    "status_change": "🔄 Изменение статуса",
-                    "new_lead": "🆕 Новая заявка",
-                    "manager_notification": "💼 Уведомление менеджера"
-                }
-                type_text = notification_types.get(notification.notification_type, notification.notification_type)
-                text += f"🏷 <b>Тип:</b> {type_text}\n\n"
+                    # Краткий текст уведомления
+                    clean_text = re.sub('<[^<]+?>', '', notification.message_text)
+                    if len(clean_text) > 150:
+                        clean_text = clean_text[:150] + "..."
+                    text += f"\n💬 {clean_text}"
 
-                # Текст уведомления (убираем HTML теги для краткости)
-                import re
-                clean_text = re.sub('<[^<]+?>', '', notification.message_text)
-                # Ограничиваем длину текста
-                if len(clean_text) > 500:
-                    clean_text = clean_text[:500] + "..."
-                text += f"💬 <b>Текст:</b>\n{clean_text}"
+                    batch_texts.append(text)
 
+                # Объединяем уведомления разделителем
+                combined_text = "\n\n━━━━━━━━━━━━━━━\n\n".join(batch_texts)
                 await callback.bot.send_message(
                     callback.message.chat.id,
-                    text,
+                    combined_text,
                     parse_mode="HTML"
                 )
+
+                # Небольшая задержка между пакетами
+                if i + batch_size < len(notifications):
+                    await asyncio.sleep(0.5)
 
             await callback.answer()
 
@@ -1686,11 +1623,9 @@ async def handle_notifications_callback(callback: CallbackQuery, has_admin_acces
         await callback.answer("❌ Ошибка при получении уведомлений", show_alert=True)
 
 
-@admin_router.message(F.text == "🔔 Уведомления")
-async def handle_notifications_button(message: Message, has_admin_access: bool = False):
+@admin_router.message(F.text == "🔔 Уведомления", HasAdminAccess())
+async def handle_notifications_button(message: Message):
     """Обработка нажатия кнопки Уведомления"""
-    if not has_admin_access and not is_admin(message.from_user.id):
-        return
-    await cmd_notifications(message, has_admin_access=has_admin_access)
+    await cmd_notifications(message)
 
 

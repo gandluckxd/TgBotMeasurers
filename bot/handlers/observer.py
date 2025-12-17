@@ -13,23 +13,17 @@ from database import (
     MeasurementStatus,
     UserRole
 )
+from bot.filters import IsObserver
 
 # Создаем роутер для команд наблюдателя
 observer_router = Router()
 
 
-@observer_router.message(Command("start"))
-async def cmd_start_observer(message: Message, user_role: UserRole = None):
+@observer_router.message(Command("start"), IsObserver())
+async def cmd_start_observer(message: Message):
     """Обработчик команды /start для наблюдателя"""
-    # Проверяем, что это наблюдатель
-    if user_role != UserRole.OBSERVER:
-        return
-
     async for session in get_db():
         user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.OBSERVER:
-            return
 
         text = f"👋 Добро пожаловать, <b>{user.full_name}</b>!\n\n"
         text += "Вы вошли как <b>Наблюдатель</b>\n\n"
@@ -46,23 +40,12 @@ async def cmd_start_observer(message: Message, user_role: UserRole = None):
         await message.answer(text, reply_markup=reply_keyboard, parse_mode="HTML")
 
 
-@observer_router.message(Command("all"))
-async def cmd_all_measurements(message: Message, user_role: UserRole = None):
+@observer_router.message(Command("all"), IsObserver())
+async def cmd_all_measurements(message: Message):
     """Показать все замеры всех замерщиков"""
-    logger.info(f"Observer cmd_all: user_role={user_role}, user_id={message.from_user.id}")
-
-    # Проверяем, что это наблюдатель
-    if user_role != UserRole.OBSERVER:
-        logger.info(f"Observer cmd_all: Not observer, skipping. user_role={user_role}")
-        return
+    logger.info(f"Observer cmd_all: user_id={message.from_user.id}")
 
     async for session in get_db():
-        user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.OBSERVER:
-            logger.warning(f"Observer cmd_all: User not found or not observer in DB")
-            return
-
         # Получаем все замеры (последние 20)
         from sqlalchemy import select
         from sqlalchemy.orm import joinedload
@@ -95,23 +78,12 @@ async def cmd_all_measurements(message: Message, user_role: UserRole = None):
             await message.answer(msg_text, parse_mode="HTML")
 
 
-@observer_router.message(Command("pending"))
-async def cmd_pending_measurements(message: Message, user_role: UserRole = None):
+@observer_router.message(Command("pending"), IsObserver())
+async def cmd_pending_measurements(message: Message):
     """Показать замеры в работе всех замерщиков"""
-    logger.info(f"Observer cmd_pending: user_role={user_role}, user_id={message.from_user.id}")
-
-    # Проверяем, что это наблюдатель
-    if user_role != UserRole.OBSERVER:
-        logger.info(f"Observer cmd_pending: Not observer, skipping. user_role={user_role}")
-        return
+    logger.info(f"Observer cmd_pending: user_id={message.from_user.id}")
 
     async for session in get_db():
-        user = await get_user_by_telegram_id(session, message.from_user.id)
-
-        if not user or user.role != UserRole.OBSERVER:
-            logger.warning(f"Observer cmd_pending: User not found or not observer in DB")
-            return
-
         # Получаем все замеры в работе (статус ASSIGNED)
         measurements = await get_measurements_by_status(session, MeasurementStatus.ASSIGNED)
 
@@ -133,21 +105,13 @@ async def cmd_pending_measurements(message: Message, user_role: UserRole = None)
 # Обработчики текстовых кнопок (Reply Keyboard)
 # ========================================
 
-@observer_router.message(F.text == "🔄 Замеры в работе")
-async def handle_pending_button(message: Message, user_role: UserRole = None):
+@observer_router.message(F.text == "🔄 Замеры в работе", IsObserver())
+async def handle_pending_button(message: Message):
     """Обработка нажатия кнопки Замеры в работе"""
-    # Проверяем, что это наблюдатель
-    if user_role != UserRole.OBSERVER:
-        return
-
-    await cmd_pending_measurements(message, user_role=user_role)
+    await cmd_pending_measurements(message)
 
 
-@observer_router.message(F.text == "📊 Все замеры")
-async def handle_all_button(message: Message, user_role: UserRole = None):
+@observer_router.message(F.text == "📊 Все замеры", IsObserver())
+async def handle_all_button(message: Message):
     """Обработка нажатия кнопки Все замеры"""
-    # Проверяем, что это наблюдатель
-    if user_role != UserRole.OBSERVER:
-        return
-
-    await cmd_all_measurements(message, user_role=user_role)
+    await cmd_all_measurements(message)
