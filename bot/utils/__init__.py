@@ -6,6 +6,7 @@ from bot.utils.notifications import (
     send_status_change_notification,
     send_measurer_change_notification,
     send_completion_notification,
+    send_cancellation_notification,
     send_new_measurement_notification_to_observers,
     send_assignment_notification_to_observers
 )
@@ -30,6 +31,7 @@ __all__ = [
     "send_status_change_notification",
     "send_measurer_change_notification",
     "send_completion_notification",
+    "send_cancellation_notification",
     "send_new_measurement_notification_to_observers",
     "send_assignment_notification_to_observers",
     "setup_logging",

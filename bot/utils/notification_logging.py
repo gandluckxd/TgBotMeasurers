@@ -100,16 +100,22 @@ def _extract_recipient_info(args: tuple, kwargs: dict) -> str:
         user = kwargs['user']
         if hasattr(user, 'telegram_id'):
             recipients.append(f"User:{user.telegram_id}")
+            if hasattr(user, 'full_name'):
+                recipients[-1] += f" ({user.full_name})"
 
     if 'measurer' in kwargs:
         measurer = kwargs['measurer']
         if hasattr(measurer, 'telegram_id'):
             recipients.append(f"Measurer:{measurer.telegram_id}")
+            if hasattr(measurer, 'full_name'):
+                recipients[-1] += f" ({measurer.full_name})"
 
     if 'manager' in kwargs:
         manager = kwargs['manager']
         if hasattr(manager, 'telegram_id'):
             recipients.append(f"Manager:{manager.telegram_id}")
+            if hasattr(manager, 'full_name'):
+                recipients[-1] += f" ({manager.full_name})"
 
     # Ищем списки пользователей
     if 'measurers' in kwargs:
@@ -123,11 +129,13 @@ def _extract_recipient_info(args: tuple, kwargs: dict) -> str:
             recipients.append(f"Observers:{len(observers)} users")
 
     # Ищем telegram_id в позиционных аргументах (после bot)
-    for i, arg in enumerate(args):
-        if i == 0:  # Пропускаем первый аргумент (обычно bot)
-            continue
-        if isinstance(arg, int) and arg > 0:  # Похоже на telegram_id
-            recipients.append(f"TelegramID:{arg}")
-            break
+    # Позиционные аргументы: args[0] = bot, args[1] может быть user
+    if len(args) > 1 and hasattr(args[1], 'telegram_id'):
+        user = args[1]
+        recipients.append(f"User:{user.telegram_id}")
+        if hasattr(user, 'full_name'):
+            recipients[-1] += f" ({user.full_name})"
+    elif len(args) > 1 and isinstance(args[1], int) and args[1] > 0:
+        recipients.append(f"TelegramID:{args[1]}")
 
     return ", ".join(recipients) if recipients else "Unknown recipient"

@@ -103,7 +103,11 @@
       "Bash(./venv/Scripts/python.exe -c:*)",
       "Bash(timeout 30 ./venv/Scripts/python.exe:*)",
       "Bash(ls:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(python main.py:*)",
+      "Bash(type:*)",
+      "Bash(powershell -Command \"$input | Select-Object -First 5\")",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []

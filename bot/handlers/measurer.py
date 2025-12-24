@@ -149,7 +149,17 @@ async def handle_status_change(callback: CallbackQuery):
             await session.refresh(measurement)
 
             # Отправляем уведомления
-            if measurement.manager:
+            if new_status == MeasurementStatus.CANCELLED:
+                # Если замер отменен - отправляем уведомления всем
+                from bot.utils.notifications import send_cancellation_notification
+                await send_cancellation_notification(
+                    callback.bot,
+                    measurement,
+                    user,
+                    measurement.manager
+                )
+            elif measurement.manager:
+                # Для других статусов отправляем только менеджеру
                 await send_status_change_notification(
                     callback.bot,
                     measurement.manager,

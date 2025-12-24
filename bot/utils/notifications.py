@@ -1136,3 +1136,237 @@ async def send_completion_notification(
             logger.error(f"Ошибка отправки уведомления руководителю {supervisor.telegram_id}: {e}", exc_info=True)
 
     logger.info(f"Завершена отправка уведомлений о завершении замера #{measurement.id}")
+
+
+async def send_cancellation_notification(
+    bot: Bot,
+    measurement: Measurement,
+    cancelled_by: User,
+    manager: Optional[User] = None
+):
+    """
+    Отправить уведомление об отмене замера всем участникам
+
+    Args:
+        bot: Экземпляр бота
+        measurement: Объект замера
+        cancelled_by: Пользователь, который отменил замер
+        manager: Менеджер (если есть)
+    """
+    from database import get_db, create_notification, get_all_admins, get_all_supervisors, get_all_observers
+    from utils.timezone_utils import format_moscow_time
+
+    # Формируем текст уведомления
+    text = "❌ <b>Замер отменен</b>\n\n"
+    text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
+
+    # === БЛОК 1: Основная информация о заказе ===
+    text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
+
+    if measurement.order_number:
+        text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+
+    if measurement.address:
+        text += f"📍 <b>Адрес:</b> {measurement.address}\n"
+    else:
+        text += f"📍 <b>Адрес:</b> Не указан\n"
+
+    if measurement.delivery_zone:
+        text += f"🚚 <b>Зона доставки:</b> {measurement.delivery_zone}\n"
+
+    text += "\n"
+
+    # === БЛОК 2: Контактные данные ===
+    if measurement.contact_name:
+        text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
+    else:
+        text += f"👤 <b>Контакт:</b> Не указан\n"
+
+    if measurement.contact_phone:
+        from utils.phone_formatter import format_phone_for_telegram
+        text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(measurement.contact_phone)}\n"
+
+    if measurement.responsible_user_name:
+        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+
+    text += "\n"
+
+    # === БЛОК 3: Информация об отмене ===
+    if measurement.measurer:
+        text += f"👷 <b>Замерщик был назначен:</b> {measurement.measurer.full_name}\n"
+
+    text += f"🚫 <b>Отменено пользователем:</b> {cancelled_by.full_name}\n"
+    text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
+
+    # === БЛОК 4: Временные метки ===
+    text += f"\n🆔 <b>ID сделки в AmoCRM:</b> {measurement.amocrm_lead_id}\n"
+
+    if measurement.created_at:
+        text += f"📅 <b>Создано:</b> {format_moscow_time(measurement.created_at)}\n"
+
+    if measurement.assigned_at:
+        text += f"📅 <b>Назначено:</b> {format_moscow_time(measurement.assigned_at)}\n"
+
+    if measurement.updated_at:
+        text += f"❌ <b>Отменено:</b> {format_moscow_time(measurement.updated_at)}\n"
+
+    logger.info(f"Начало отправки уведомлений об отмене замера #{measurement.id}")
+
+    # Получаем список администраторов, руководителей и наблюдателей
+    admins = []
+    supervisors = []
+    observers = []
+
+    try:
+        async for session in get_db():
+            admins = await get_all_admins(session)
+            supervisors = await get_all_supervisors(session)
+            observers = await get_all_observers(session)
+            logger.info(f"Найдено администраторов: {len(admins)}, руководителей: {len(supervisors)}, наблюдателей: {len(observers)}")
+            break
+    except Exception as e:
+        logger.error(f"Ошибка получения списков пользователей: {e}", exc_info=True)
+
+    # Отправляем уведомление менеджеру
+    if manager:
+        try:
+            await bot.send_message(
+                chat_id=manager.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=manager.id,
+                    message_text=text,
+                    notification_type="cancellation",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление об отмене менеджеру {manager.telegram_id}")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления об отмене менеджеру: {e}", exc_info=True)
+
+    # Отправляем уведомление замерщику (если он не тот, кто отменил)
+    if measurement.measurer and measurement.measurer.id != cancelled_by.id:
+        try:
+            await bot.send_message(
+                chat_id=measurement.measurer.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=measurement.measurer.id,
+                    message_text=text,
+                    notification_type="cancellation",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление об отмене замерщику {measurement.measurer.telegram_id} ({measurement.measurer.full_name})")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления замерщику {measurement.measurer.telegram_id}: {e}", exc_info=True)
+
+    # Отправляем уведомления администраторам
+    for admin in admins:
+        # Не отправляем тому, кто отменил
+        if admin.id == cancelled_by.id:
+            continue
+
+        try:
+            await bot.send_message(
+                chat_id=admin.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=admin.id,
+                    message_text=text,
+                    notification_type="cancellation",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление об отмене администратору {admin.telegram_id} ({admin.full_name})")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления администратору {admin.telegram_id}: {e}", exc_info=True)
+
+    # Отправляем уведомления руководителям
+    for supervisor in supervisors:
+        # Не отправляем тому, кто отменил
+        if supervisor.id == cancelled_by.id:
+            continue
+
+        try:
+            await bot.send_message(
+                chat_id=supervisor.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=supervisor.id,
+                    message_text=text,
+                    notification_type="cancellation",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление об отмене руководителю {supervisor.telegram_id} ({supervisor.full_name})")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления руководителю {supervisor.telegram_id}: {e}", exc_info=True)
+
+    # Отправляем уведомления наблюдателям
+    for observer in observers:
+        # Не отправляем тому, кто отменил
+        if observer.id == cancelled_by.id:
+            continue
+
+        try:
+            await bot.send_message(
+                chat_id=observer.telegram_id,
+                text=text,
+                parse_mode="HTML"
+            )
+
+            # Сохраняем уведомление в БД
+            async for session in get_db():
+                await create_notification(
+                    session=session,
+                    recipient_id=observer.id,
+                    message_text=text,
+                    notification_type="cancellation",
+                    measurement_id=measurement.id,
+                    is_sent=True
+                )
+                break
+
+            logger.info(f"Отправлено уведомление об отмене наблюдателю {observer.telegram_id} ({observer.full_name})")
+
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления наблюдателю {observer.telegram_id}: {e}", exc_info=True)
+
+    logger.info(f"Завершена отправка уведомлений об отмене замера #{measurement.id}")

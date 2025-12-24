@@ -36,7 +36,8 @@ def log_command(func: Callable) -> Callable:
             command_text = message.text or "NO_TEXT"
 
             # Получаем роль из kwargs (добавляется middleware)
-            user_role = kwargs.get('user_role', 'UNKNOWN')
+            user_role_obj = kwargs.get('user_role')
+            user_role = user_role_obj.value if user_role_obj else 'UNKNOWN'
 
             # Создаем логгер с контекстом пользователя
             user_logger = logger.bind(
@@ -107,7 +108,8 @@ def log_callback(func: Callable) -> Callable:
             callback_data = callback.data or "NO_DATA"
 
             # Получаем роль из kwargs
-            user_role = kwargs.get('user_role', 'UNKNOWN')
+            user_role_obj = kwargs.get('user_role')
+            user_role = user_role_obj.value if user_role_obj else 'UNKNOWN'
 
             # Создаем логгер с контекстом пользователя
             user_logger = logger.bind(
@@ -192,7 +194,8 @@ def log_message(func: Callable) -> Callable:
                 content = "Unknown content type"
 
             # Получаем роль
-            user_role = kwargs.get('user_role', 'UNKNOWN')
+            user_role_obj = kwargs.get('user_role')
+            user_role = user_role_obj.value if user_role_obj else 'UNKNOWN'
 
             user_logger = logger.bind(
                 user_id=f"USER_{user_id}",

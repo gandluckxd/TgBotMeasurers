@@ -768,6 +768,125 @@ async def handle_change_measurer(callback: CallbackQuery):
         await callback.answer("❌ Ошибка при изменении замерщика", show_alert=True)
 
 
+@admin_router.callback_query(F.data.startswith("status:"), HasAdminAccess())
+async def handle_status_change(callback: CallbackQuery):
+    """Обработка изменения статуса замера (для администраторов и руководителей)"""
+    try:
+        # Парсим callback data: status:measurement_id:new_status
+        parts = callback.data.split(":")
+        measurement_id = int(parts[1])
+        new_status_str = parts[2]
+
+        async for session in get_db():
+            # Получаем пользователя
+            user = await get_user_by_telegram_id(session, callback.from_user.id)
+
+            if not user:
+                await callback.answer("❌ Пользователь не найден", show_alert=True)
+                return
+
+            # Получаем замер
+            measurement = await get_measurement_by_id(session, measurement_id)
+
+            if not measurement:
+                await callback.answer("❌ Замер не найден", show_alert=True)
+                return
+
+            # Сохраняем старый статус
+            old_status = measurement.status
+            old_status_text = measurement.status_text
+
+            # Обновляем статус
+            new_status = MeasurementStatus(new_status_str)
+            measurement.status = new_status
+
+            # Обновляем временные метки
+            if new_status == MeasurementStatus.COMPLETED:
+                measurement.completed_at = moscow_now()
+
+            await session.commit()
+
+            # Перезагружаем замер с relationships после коммита
+            from sqlalchemy import select
+            from sqlalchemy.orm import joinedload
+            from database.models import Measurement
+
+            result = await session.execute(
+                select(Measurement)
+                .options(
+                    joinedload(Measurement.measurer),
+                    joinedload(Measurement.manager),
+                    joinedload(Measurement.confirmed_by),
+                    joinedload(Measurement.auto_assigned_measurer)
+                )
+                .where(Measurement.id == measurement.id)
+            )
+            measurement = result.scalar_one()
+
+            # Отправляем уведомления
+            if new_status == MeasurementStatus.CANCELLED:
+                # Если замер отменен - отправляем уведомления всем
+                from bot.utils.notifications import send_cancellation_notification
+                await send_cancellation_notification(
+                    callback.bot,
+                    measurement,
+                    user,
+                    measurement.manager
+                )
+            elif measurement.manager:
+                # Для других статусов отправляем только менеджеру
+                from bot.utils.notifications import send_status_change_notification
+                await send_status_change_notification(
+                    callback.bot,
+                    measurement.manager,
+                    measurement,
+                    old_status_text,
+                    measurement.status_text
+                )
+
+            # Если замер завершен, отправляем специальное уведомление
+            # менеджеру, администраторам и руководителям
+            if new_status == MeasurementStatus.COMPLETED:
+                from bot.utils.notifications import send_completion_notification
+                logger.info(f"Замер #{measurement.id} завершен, вызываем send_completion_notification")
+                await send_completion_notification(
+                    callback.bot,
+                    measurement,
+                    measurement.manager
+                )
+                logger.info(f"send_completion_notification для замера #{measurement.id} выполнена")
+
+            # Если замер завершен - удаляем сообщение
+            if new_status == MeasurementStatus.COMPLETED:
+                await callback.message.delete()
+                await callback.answer("✅ Замер отмечен как выполненный")
+                logger.info(f"Замер #{measurement.id} завершен и сообщение удалено")
+            else:
+                # Для других статусов - обновляем сообщение
+                new_text = f"✅ <b>Статус обновлен!</b>\n\n"
+                new_text += measurement.get_info_text(detailed=True, show_admin_info=True)
+
+                keyboard = get_measurement_actions_keyboard(
+                    measurement.id,
+                    is_admin=True,
+                    current_status=measurement.status
+                )
+
+                await callback.message.edit_text(new_text, reply_markup=keyboard, parse_mode="HTML")
+
+                status_messages = {
+                    MeasurementStatus.ASSIGNED: "📋 Замер в работе",
+                    MeasurementStatus.CANCELLED: "❌ Замер отменен",
+                }
+
+                await callback.answer(status_messages.get(new_status, "✅ Статус обновлен"))
+                logger.info(f"Статус замера #{measurement.id} изменен с {old_status.value} на {new_status.value}")
+
+    except Exception as e:
+        logger.error(f"Ошибка при изменении статуса: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при изменении статуса", show_alert=True)
+
+
 @admin_router.callback_query(F.data.startswith("list:"), HasAdminAccess())
 async def handle_list(callback: CallbackQuery):
     """Обработка запросов списков замеров"""

@@ -62,7 +62,8 @@ class LoggingMiddleware(BaseMiddleware):
         user_id = user.id
         username = user.username or "NO_USERNAME"
         full_name = user.full_name
-        user_role = data.get('user_role', 'UNKNOWN')
+        user_role_obj = data.get('user_role')
+        user_role = user_role_obj.value if user_role_obj else 'UNKNOWN'
 
         # Определяем тип сообщения
         if message.text and message.text.startswith('/'):
@@ -125,7 +126,8 @@ class LoggingMiddleware(BaseMiddleware):
         user_id = user.id
         username = user.username or "NO_USERNAME"
         full_name = user.full_name
-        user_role = data.get('user_role', 'UNKNOWN')
+        user_role_obj = data.get('user_role')
+        user_role = user_role_obj.value if user_role_obj else 'UNKNOWN'
         callback_data = callback.data or "NO_DATA"
 
         user_logger = logger.bind(
