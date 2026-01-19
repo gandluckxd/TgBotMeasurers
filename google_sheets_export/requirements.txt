@@ -1,0 +1,16 @@
+# Core
+pydantic==2.9.2
+pydantic-settings==2.6.0
+
+# Database
+sqlalchemy==2.0.35
+aiosqlite==0.20.0
+greenlet==3.1.1
+fdb==2.0.4
+
+# Logging
+loguru==0.7.2
+
+# Google Sheets
+gspread==6.2.1
+oauth2client==4.1.3

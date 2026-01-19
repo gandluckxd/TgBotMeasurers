@@ -48,6 +48,15 @@ class ExporterSettings(BaseSettings):
         description="Интервал экспорта в секундах (по умолчанию 300 = 5 минут)"
     )
 
+    # Altawin DB (Firebird)
+    altawin_db_host: str = Field(default="192.168.1.251", description="Altawin DB host")
+    altawin_db_port: int = Field(default=3050, description="Altawin DB port")
+    altawin_db_name: str = Field(default="D:/AltawinDB/altawinOffice.FDB", description="Altawin DB path")
+    altawin_db_user: str = Field(default="sysdba", description="Altawin DB user")
+    altawin_db_password: str = Field(default="masterkey", description="Altawin DB password")
+    altawin_db_charset: str = Field(default="WIN1251", description="Altawin DB charset")
+
+
 
 # Создаем экземпляр настроек для экспортера
 settings = ExporterSettings()

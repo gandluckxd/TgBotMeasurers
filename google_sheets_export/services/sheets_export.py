@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Measurement, User
 from database.database import db
-from config import settings
+from config_exporter import settings
 from loguru import logger
 from utils.timezone_utils import format_moscow_time, moscow_now
+from services.altawin_db import get_order_data
 
 
 class GoogleSheetsExporter:
@@ -72,6 +73,14 @@ class GoogleSheetsExporter:
             result = await session.execute(query)
             measurements = result.scalars().unique().all()
 
+            confirmed_by_ids = {m.confirmed_by_user_id for m in measurements if m.confirmed_by_user_id}
+            users_by_id = {}
+            if confirmed_by_ids:
+                users_result = await session.execute(
+                    select(User).where(User.id.in_(confirmed_by_ids))
+                )
+                users_by_id = {u.id: u.full_name for u in users_result.scalars().all()}
+
             # Формируем данные для таблицы
             data = []
 
@@ -80,10 +89,22 @@ class GoogleSheetsExporter:
                 measurer_name = m.measurer.full_name if m.measurer else "Не назначен"
                 contact_name = m.contact_name or "—"
                 manager_name = m.manager.full_name if m.manager else (m.responsible_user_name or "—")
-                zone = m.delivery_zone or "—"
-                address = m.address or "—"
-                windows_count = m.windows_count or "—"
-                windows_area = m.windows_area or "—"
+                missing_text = "—"
+                altawin_data = None
+                if m.altawin_order_code:
+                    altawin_data = get_order_data(m.altawin_order_code)
+
+                order_number = (altawin_data.get("order_number") if altawin_data else None) or m.order_number or missing_text
+                zone = (altawin_data.get("zone") if altawin_data else None) or m.delivery_zone or missing_text
+                address = (altawin_data.get("address") if altawin_data else None) or m.address or missing_text
+                if altawin_data and altawin_data.get("qty_izd") is not None:
+                    windows_count = str(altawin_data.get("qty_izd"))
+                else:
+                    windows_count = m.windows_count or missing_text
+                if altawin_data and altawin_data.get("area_izd") is not None:
+                    windows_area = str(altawin_data.get("area_izd"))
+                else:
+                    windows_area = m.windows_area or missing_text
 
                 # Новые поля для автоматического распределения
                 auto_assigned_measurer_name = m.auto_assigned_measurer.full_name if m.auto_assigned_measurer else "—"
@@ -98,21 +119,24 @@ class GoogleSheetsExporter:
                 assignment_reason = assignment_reason_map.get(m.assignment_reason, "—")
 
                 # Кто распределил
-                assigned_by = m.confirmed_by.full_name if m.confirmed_by else "—"
+                assigned_by = m.confirmed_by.full_name if m.confirmed_by else users_by_id.get(m.confirmed_by_user_id, missing_text)
 
                 # Итоговый замерщик
                 final_measurer = m.measurer.full_name if m.measurer else "Не назначен"
 
                 # Стоимость из названия сделки (если есть)
                 # Предполагаем, что стоимость может быть в названии сделки
-                cost = "—"  # По умолчанию
+                if altawin_data and altawin_data.get("total_price") is not None:
+                    cost = altawin_data.get("total_price")
+                else:
+                    cost = missing_text
 
                 # Даты
                 assigned_date = m.assigned_at.strftime('%d.%m.%Y %H:%M') if m.assigned_at else "—"
                 completed_date = m.completed_at.strftime('%d.%m.%Y %H:%M') if m.completed_at else "—"
 
                 row = [
-                    m.order_number or "—",         # Номер заказа
+                    order_number or "—",         # Номер заказа
                     contact_name,                  # Контакт
                     manager_name,                  # Менеджер
                     zone,                          # Зона
