@@ -1,4 +1,4 @@
-"""Система уведомлений для пользователей"""
+﻿"""Система уведомлений для пользователей"""
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from loguru import logger
@@ -7,6 +7,48 @@ from typing import Optional, Dict, Any
 from database.models import Measurement, User
 from bot_handlers.keyboards.inline import get_measurers_keyboard, get_measurement_actions_keyboard
 from bot_handlers.utils.notification_logging import log_notification
+
+
+def get_altawin_display_values(altawin_data, contact_phone: Optional[str] = None) -> Dict[str, str]:
+    """Подготовить значения Altawin для отображения с фолбэками."""
+    missing_text = "Данные не найдены в Altawin"
+    amo_missing_text = "Данные не найдены в AmoCRM"
+
+    def value_or_unknown(value):
+        if value is None or value == "":
+            return "Не указано"
+        return str(value)
+
+    if not altawin_data:
+        order_number = missing_text
+        address = missing_text
+        zone = missing_text
+        qty_izd = missing_text
+        area_izd = missing_text
+    else:
+        order_number = value_or_unknown(altawin_data.order_number)
+        address = value_or_unknown(altawin_data.address)
+        zone = value_or_unknown(altawin_data.zone)
+        qty_izd = value_or_unknown(altawin_data.qty_izd)
+        area_izd = value_or_unknown(altawin_data.area_izd)
+
+    if area_izd not in ["Не указано", missing_text]:
+        area_izd = f"{area_izd} м²"
+
+    if contact_phone:
+        from utils.phone_formatter import format_phone_for_telegram
+        phone = format_phone_for_telegram(contact_phone)
+    else:
+        phone = amo_missing_text
+
+    return {
+        "order_number": order_number,
+        "address": address,
+        "zone": zone,
+        "phone": phone,
+        "qty_izd": qty_izd,
+        "area_izd": area_izd,
+    }
 
 
 def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
@@ -61,14 +103,14 @@ def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
             break
 
     if not address_found:
-        text += f"📍 <b>Адрес:</b> Не указан\n"
+        text += f"📍 <b>Адрес:</b> Данные не найдены в AmoCRM\n"
 
     text += "\n"
 
     # === БЛОК 2: Контактные данные ===
     if contacts:
         contact = contacts[0]  # Берем первый контакт
-        contact_name = contact.get("name", "Не указано")
+        contact_name = contact.get("name", "Данные не найдены в AmoCRM")
         text += f"👤 <b>Контакт:</b> {contact_name}\n"
 
         # Ищем телефон в кастомных полях контакта
@@ -83,11 +125,11 @@ def format_lead_info_for_notification(full_info: Dict[str, Any]) -> str:
                 text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(value)}\n"
                 break
     else:
-        text += "👤 <b>Контакт:</b> Не указан\n"
+        text += "👤 <b>Контакт:</b> Данные не найдены в AmoCRM\n"
 
     # Ответственный менеджер
     if responsible_user:
-        manager_name = responsible_user.get("name", "Не указан")
+        manager_name = responsible_user.get("name", "Данные не найдены в AmoCRM")
         text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {manager_name}\n"
 
     text += "\n"
@@ -291,6 +333,7 @@ async def send_assignment_notification_to_measurer(
     try:
         # Получаем актуальные данные из Altawin
         altawin_data = measurement.get_altawin_data()
+        altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
         text = "📋 <b>Вам назначен новый замер!</b>\n\n"
         # Формируем текст вручную, чтобы избежать проблем с detached объектами
@@ -298,43 +341,22 @@ async def send_assignment_notification_to_measurer(
 
         # Основная информация
         text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-        if altawin_data and altawin_data.order_number:
-            text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-        if altawin_data and altawin_data.address:
-            text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-
-        if altawin_data and altawin_data.zone:
-            text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+        text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+        text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+        text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
         text += "\n"
 
         # Контактные данные
-        if measurement.contact_name:
-            text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-
-        if altawin_data and altawin_data.phone:
-            from utils.phone_formatter import format_phone_for_telegram
-            text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
-
-        if measurement.responsible_user_name:
-            text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+        text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+        text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
+        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name or 'Данные не найдены в AmoCRM'}\n"
 
         text += "\n"
 
         # Параметры окон из Altawin
-        has_window_info = False
-        if altawin_data and altawin_data.qty_izd:
-            text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-            has_window_info = True
-
-        if altawin_data and altawin_data.area_izd:
-            text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-            has_window_info = True
-
-        if has_window_info:
-            text += "\n"
+        text += f"🪟 <b>Количество окон:</b> {altawin_values['qty_izd']}\n"
+        text += f"📐 <b>Площадь окон:</b> {altawin_values['area_izd']}\n\n"
 
         # Статус и замерщик
         text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
@@ -420,50 +442,28 @@ async def send_assignment_notification_to_manager(
 
         # Получаем актуальные данные из Altawin
         altawin_data = measurement.get_altawin_data()
+        altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
         text = "✅ <b>Замерщик назначен на ваш заказ</b>\n\n"
         text += f"📋 <b>Замер #{measurement.id}</b>\n\n"
 
         # === БЛОК 1: Основная информация о заказе ===
         text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-        if altawin_data and altawin_data.order_number:
-            text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-        if altawin_data and altawin_data.address:
-            text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-        else:
-            text += f"📍 <b>Адрес:</b> Не указан\n"
-
-        if altawin_data and altawin_data.zone:
-            text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+        text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+        text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+        text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
         text += "\n"
 
         # === БЛОК 2: Контактные данные ===
-        if measurement.contact_name:
-            text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-        else:
-            text += f"👤 <b>Контакт:</b> Не указан\n"
-
-        if altawin_data and altawin_data.phone:
-            from utils.phone_formatter import format_phone_for_telegram
-            text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
+        text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+        text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
 
         text += "\n"
 
         # === БЛОК 3: Параметры окон (если есть) ===
-        has_window_info = False
-        if altawin_data and altawin_data.qty_izd:
-            text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-            has_window_info = True
-
-        if altawin_data and altawin_data.area_izd:
-            text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-            has_window_info = True
-
-        if has_window_info:
-            text += "\n"
+        text += f"🪟 <b>Количество окон:</b> {altawin_values['qty_izd']}\n"
+        text += f"📐 <b>Площадь окон:</b> {altawin_values['area_izd']}\n\n"
 
         # === БЛОК 4: Назначение и статус ===
         text += f"👷 <b>Замерщик:</b> {measurer.full_name}\n"
@@ -534,6 +534,7 @@ async def send_new_measurement_notification_to_observers(
     try:
         # Получаем актуальные данные из Altawin
         altawin_data = measurement.get_altawin_data()
+        altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
         # Получаем всех активных наблюдателей
         async for session in get_db():
@@ -549,47 +550,22 @@ async def send_new_measurement_notification_to_observers(
 
             # === БЛОК 1: Основная информация о заказе ===
             text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-            if altawin_data and altawin_data.order_number:
-                text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-            if altawin_data and altawin_data.address:
-                text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-            else:
-                text += f"📍 <b>Адрес:</b> Не указан\n"
-
-            if altawin_data and altawin_data.zone:
-                text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+            text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+            text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+            text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
             text += "\n"
 
             # === БЛОК 2: Контактные данные ===
-            if measurement.contact_name:
-                text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-            else:
-                text += f"👤 <b>Контакт:</b> Не указан\n"
-
-            if altawin_data and altawin_data.phone:
-                from utils.phone_formatter import format_phone_for_telegram
-                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
-
-            if measurement.responsible_user_name:
-                text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+            text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+            text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
+            text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name or 'Данные не найдены в AmoCRM'}\n"
 
             text += "\n"
 
             # === БЛОК 3: Параметры окон (если есть) ===
-            has_window_info = False
-            if altawin_data and altawin_data.qty_izd:
-                text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-                has_window_info = True
-
-            if altawin_data and altawin_data.area_izd:
-                text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-                has_window_info = True
-
-            if has_window_info:
-                text += "\n"
+            text += f"🪟 <b>Количество окон:</b> {altawin_values['qty_izd']}\n"
+            text += f"📐 <b>Площадь окон:</b> {altawin_values['area_izd']}\n\n"
 
             # === БЛОК 4: Статус (БЕЗ информации о замерщике!) ===
             text += f"📊 <b>Статус:</b> {measurement.status_text}\n"
@@ -674,6 +650,7 @@ async def send_assignment_notification_to_observers(
     try:
         # Получаем актуальные данные из Altawin
         altawin_data = measurement.get_altawin_data()
+        altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
         # Получаем всех активных наблюдателей
         async for session in get_db():
@@ -694,47 +671,22 @@ async def send_assignment_notification_to_observers(
 
             # === БЛОК 1: Основная информация о заказе ===
             text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-            if altawin_data and altawin_data.order_number:
-                text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-            if altawin_data and altawin_data.address:
-                text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-            else:
-                text += f"📍 <b>Адрес:</b> Не указан\n"
-
-            if altawin_data and altawin_data.zone:
-                text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+            text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+            text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+            text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
             text += "\n"
 
             # === БЛОК 2: Контактные данные ===
-            if measurement.contact_name:
-                text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-            else:
-                text += f"👤 <b>Контакт:</b> Не указан\n"
-
-            if altawin_data and altawin_data.phone:
-                from utils.phone_formatter import format_phone_for_telegram
-                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
-
-            if measurement.responsible_user_name:
-                text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+            text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+            text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
+            text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name or 'Данные не найдены в AmoCRM'}\n"
 
             text += "\n"
 
             # === БЛОК 3: Параметры окон (если есть) ===
-            has_window_info = False
-            if altawin_data and altawin_data.qty_izd:
-                text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-                has_window_info = True
-
-            if altawin_data and altawin_data.area_izd:
-                text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-                has_window_info = True
-
-            if has_window_info:
-                text += "\n"
+            text += f"🪟 <b>Количество окон:</b> {altawin_values['qty_izd']}\n"
+            text += f"📐 <b>Площадь окон:</b> {altawin_values['area_izd']}\n\n"
 
             # === БЛОК 4: Назначение и статус ===
             text += f"👷 <b>Замерщик:</b> {measurer.full_name}\n"
@@ -822,11 +774,12 @@ async def send_status_change_notification(
     try:
         # Получаем актуальные данные из Altawin
         altawin_data = measurement.get_altawin_data()
+        altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
         text = "🔄 <b>Изменен статус замера</b>\n\n"
         text += f"📋 <b>Замер #{measurement.id}</b>\n"
-        text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
-        text += f"📍 <b>Адрес:</b> {altawin_data.address if altawin_data and altawin_data.address else 'Не указан'}\n\n"
+        text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+        text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n\n"
         text += f"<b>Старый статус:</b> {old_status}\n"
         text += f"<b>Новый статус:</b> {new_status}\n"
 
@@ -866,14 +819,15 @@ async def send_measurer_change_notification(
 
     # Получаем актуальные данные из Altawin
     altawin_data = measurement.get_altawin_data()
+    altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
     # Уведомление старому замерщику
     if old_measurer:
         try:
             text = "⚠️ <b>Вы сняты с замера</b>\n\n"
             text += f"📋 <b>Замер #{measurement.id}</b>\n"
-            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Не указан'}\n"
-            text += f"📍 <b>Адрес:</b> {altawin_data.address if altawin_data and altawin_data.address else 'Не указан'}\n\n"
+            text += f"👤 <b>Клиент:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+            text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n\n"
             text += f"Замер переназначен на: {new_measurer.full_name}"
 
             await bot.send_message(
@@ -908,44 +862,21 @@ async def send_measurer_change_notification(
 
             # === БЛОК 1: Основная информация о заказе ===
             text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-            if altawin_data and altawin_data.order_number:
-                text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-            if altawin_data and altawin_data.address:
-                text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-            else:
-                text += f"📍 <b>Адрес:</b> Не указан\n"
-
-            if altawin_data and altawin_data.zone:
-                text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+            text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+            text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+            text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
             text += "\n"
 
             # === БЛОК 2: Контактные данные ===
-            if measurement.contact_name:
-                text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-            else:
-                text += f"👤 <b>Контакт:</b> Не указан\n"
-
-            if altawin_data and altawin_data.phone:
-                from utils.phone_formatter import format_phone_for_telegram
-                text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
+            text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+            text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
 
             text += "\n"
 
             # === БЛОК 3: Параметры окон (если есть) ===
-            has_window_info = False
-            if altawin_data and altawin_data.qty_izd:
-                text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-                has_window_info = True
-
-            if altawin_data and altawin_data.area_izd:
-                text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-                has_window_info = True
-
-            if has_window_info:
-                text += "\n"
+            text += f"🪟 <b>Количество окон:</b> {altawin_values['qty_izd']}\n"
+            text += f"📐 <b>Площадь окон:</b> {altawin_values['area_izd']}\n\n"
 
             # === БЛОК 4: Изменение замерщика ===
             text += "⚠️ <b>ИЗМЕНЕНИЕ ЗАМЕРЩИКА:</b>\n"
@@ -1000,6 +931,7 @@ async def send_completion_notification(
 
     # Получаем актуальные данные из Altawin
     altawin_data = measurement.get_altawin_data()
+    altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
     # Формируем развернутое текст уведомления
     text = "✅ <b>Замер выполнен!</b>\n\n"
@@ -1007,47 +939,22 @@ async def send_completion_notification(
 
     # === БЛОК 1: Основная информация о заказе ===
     text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-    if altawin_data and altawin_data.order_number:
-        text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-    if altawin_data and altawin_data.address:
-        text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-    else:
-        text += f"📍 <b>Адрес:</b> Не указан\n"
-
-    if altawin_data and altawin_data.zone:
-        text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+    text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+    text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+    text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
     text += "\n"
 
     # === БЛОК 2: Контактные данные ===
-    if measurement.contact_name:
-        text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-    else:
-        text += f"👤 <b>Контакт:</b> Не указан\n"
-
-    if altawin_data and altawin_data.phone:
-        from utils.phone_formatter import format_phone_for_telegram
-        text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
-
-    if measurement.responsible_user_name:
-        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+    text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+    text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
+    text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name or 'Данные не найдены в AmoCRM'}\n"
 
     text += "\n"
 
     # === БЛОК 3: Параметры окон (если есть) ===
-    has_window_info = False
-    if altawin_data and altawin_data.qty_izd:
-        text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-        has_window_info = True
-
-    if altawin_data and altawin_data.area_izd:
-        text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-        has_window_info = True
-
-    if has_window_info:
-        text += "\n"
+    text += f"🪟 <b>Количество окон:</b> {altawin_values['qty_izd']}\n"
+    text += f"📐 <b>Площадь окон:</b> {altawin_values['area_izd']}\n\n"
 
     # === БЛОК 4: Результат выполнения ===
     if measurement.measurer:
@@ -1183,6 +1090,7 @@ async def send_cancellation_notification(
 
     # Получаем актуальные данные из Altawin
     altawin_data = measurement.get_altawin_data()
+    altawin_values = get_altawin_display_values(altawin_data, measurement.contact_phone)
 
     # Формируем текст уведомления
     text = "❌ <b>Замер отменен</b>\n\n"
@@ -1190,32 +1098,16 @@ async def send_cancellation_notification(
 
     # === БЛОК 1: Основная информация о заказе ===
     text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-
-    if altawin_data and altawin_data.order_number:
-        text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-    if altawin_data and altawin_data.address:
-        text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-    else:
-        text += f"📍 <b>Адрес:</b> Не указан\n"
-
-    if altawin_data and altawin_data.zone:
-        text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+    text += f"🔢 <b>Номер заказа:</b> {altawin_values['order_number']}\n"
+    text += f"📍 <b>Адрес:</b> {altawin_values['address']}\n"
+    text += f"🚚 <b>Зона доставки:</b> {altawin_values['zone']}\n"
 
     text += "\n"
 
     # === БЛОК 2: Контактные данные ===
-    if measurement.contact_name:
-        text += f"👤 <b>Контакт:</b> {measurement.contact_name}\n"
-    else:
-        text += f"👤 <b>Контакт:</b> Не указан\n"
-
-    if altawin_data and altawin_data.phone:
-        from utils.phone_formatter import format_phone_for_telegram
-        text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
-
-    if measurement.responsible_user_name:
-        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name}\n"
+    text += f"👤 <b>Контакт:</b> {measurement.contact_name or 'Данные не найдены в AmoCRM'}\n"
+    text += f"📞 <b>Телефон:</b> {altawin_values['phone']}\n"
+    text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {measurement.responsible_user_name or 'Данные не найдены в AmoCRM'}\n"
 
     text += "\n"
 
@@ -1398,3 +1290,6 @@ async def send_cancellation_notification(
             logger.error(f"Ошибка отправки уведомления наблюдателю {observer.telegram_id}: {e}", exc_info=True)
 
     logger.info(f"Завершена отправка уведомлений об отмене замера #{measurement.id}")
+
+
+

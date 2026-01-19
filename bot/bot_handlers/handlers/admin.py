@@ -384,16 +384,18 @@ async def handle_assign_measurer(callback: CallbackQuery):
             # Сохраняем кто подтвердил/распределил
             measurement.confirmed_by_user_id = callback.from_user.id
 
+            should_update_round_robin = measurement.assignment_reason == "round_robin"
+
             # ВАЖНО: При первом подтверждении обновляем счётчик round-robin
             # Делаем это ДО коммита, пока сессия активна
-            if not was_confirmed and (measurement.delivery_zone is None or measurement.delivery_zone == ""):
+            if not was_confirmed and should_update_round_robin:
                 from services.zone_service import ZoneService
                 zone_service = ZoneService(session)
                 await zone_service.update_round_robin_counter(measurer.id)
                 logger.info(f"Round-robin счётчик обновлён при первом назначении на замерщика {measurer.id}")
             elif was_confirmed and old_measurer and old_measurer.id != measurer.id:
                 # При смене уже подтверждённого замера также обновляем счётчик
-                if measurement.delivery_zone is None or measurement.delivery_zone == "":
+                if should_update_round_robin:
                     from services.zone_service import ZoneService
                     zone_service = ZoneService(session)
                     await zone_service.update_round_robin_counter(measurer.id)
@@ -489,6 +491,15 @@ async def handle_assign_measurer(callback: CallbackQuery):
                 if not confirmed_by_name:
                     confirmed_by_name = callback.from_user.first_name or "Руководитель"
 
+                altawin_data = measurement.get_altawin_data()
+                altawin_missing_text = "Данные не найдены в Altawin"
+                if not altawin_data:
+                    order_number_text = altawin_missing_text
+                elif altawin_data.order_number:
+                    order_number_text = altawin_data.order_number
+                else:
+                    order_number_text = "Не указано"
+
                 for notif_data in notifications_data:
                     try:
                         # Формируем расширенный текст уведомления
@@ -496,8 +507,7 @@ async def handle_assign_measurer(callback: CallbackQuery):
 
                         # Информация о замере
                         notification_text += f"📄 <b>Сделка:</b> {measurement.lead_name}\n"
-                        if measurement.order_number:
-                            notification_text += f"🔢 <b>Номер заказа:</b> {measurement.order_number}\n"
+                        notification_text += f"🔢 <b>Номер заказа:</b> {order_number_text}\n"
 
                         notification_text += "\n"
 
@@ -601,6 +611,8 @@ async def handle_confirm_assignment(callback: CallbackQuery):
             )
             measurement = result.scalar_one()
 
+            altawin_data = measurement.get_altawin_data()
+
             # ВАЖНО: Явно перезагружаем замерщика (новый объект после коммита)
             # Это гарантирует, что объект замерщика будет доступен
             measurer_obj_from_db = None
@@ -619,7 +631,13 @@ async def handle_confirm_assignment(callback: CallbackQuery):
             measurement_id = measurement.id
             measurement_status = measurement.status
             measurement_lead_name = measurement.lead_name
-            measurement_order_number = measurement.order_number
+            altawin_missing_text = "Данные не найдены в Altawin"
+            if not altawin_data:
+                measurement_order_number = altawin_missing_text
+            elif altawin_data.order_number:
+                measurement_order_number = altawin_data.order_number
+            else:
+                measurement_order_number = "Не указано"
 
             # ВАЖНО: Получаем текст для обновления сообщения ВНУТРИ сессии
             info_text = measurement.get_info_text(detailed=True, show_admin_info=True)
@@ -635,7 +653,7 @@ async def handle_confirm_assignment(callback: CallbackQuery):
                         self.id = user.id
 
             class MeasurementData:
-                def __init__(self, meas):
+                def __init__(self, meas, cached_altawin_data=None):
                     self.id = meas.id
                     self.lead_name = meas.lead_name
                     self.order_number = meas.order_number
@@ -650,11 +668,51 @@ async def handle_confirm_assignment(callback: CallbackQuery):
                     self.amocrm_lead_id = meas.amocrm_lead_id
                     self.created_at = meas.created_at
                     self.assigned_at = meas.assigned_at
+                    self.altawin_order_code = meas.altawin_order_code
+                    self._altawin_data = cached_altawin_data
+                    self.manager = None
+
+                def get_altawin_data(self):
+                    if self._altawin_data:
+                        return self._altawin_data
+
+                    if self.altawin_order_code:
+                        from services.altawin import altawin_client
+                        self._altawin_data = altawin_client.get_order_data(self.altawin_order_code)
+                        if self._altawin_data:
+                            return self._altawin_data
+
+                    if not any([
+                        self.order_number,
+                        self.address,
+                        self.delivery_zone,
+                        self.contact_phone,
+                        self.windows_count,
+                        self.windows_area
+                    ]):
+                        return None
+
+                    from services.altawin import AltawinOrderData
+                    self._altawin_data = AltawinOrderData(
+                        order_id=0,
+                        order_number=self.order_number or "",
+                        total_price=None,
+                        qty_izd=self.windows_count,
+                        area_izd=self.windows_area,
+                        zone=self.delivery_zone,
+                        measurer=None,
+                        address=self.address,
+                        agreement_date=None,
+                        agreement_no=None,
+                        phone=self.contact_phone
+                    )
+                    return self._altawin_data
 
             # ВАЖНО: Используем явно перезагруженного замерщика для создания UserData
             measurer_obj = UserData(measurer_obj_from_db) if measurer_obj_from_db else None
             manager_obj = UserData(measurement.manager) if measurement.manager else None
-            measurement_obj = MeasurementData(measurement)
+            measurement_obj = MeasurementData(measurement, cached_altawin_data=altawin_data)
+            measurement_obj.manager = manager_obj
 
             # Добавляем отладочный лог
             logger.info(f"DEBUG: measurer_obj = {measurer_obj}, has telegram_id = {hasattr(measurer_obj, 'telegram_id') if measurer_obj else False}")
@@ -704,8 +762,7 @@ async def handle_confirm_assignment(callback: CallbackQuery):
 
                     # Информация о замере
                     notification_text += f"📄 <b>Сделка:</b> {measurement_lead_name}\n"
-                    if measurement_order_number:
-                        notification_text += f"🔢 <b>Номер заказа:</b> {measurement_order_number}\n"
+                    notification_text += f"🔢 <b>Номер заказа:</b> {measurement_order_number}\n"
 
                     notification_text += "\n"
 
@@ -1747,5 +1804,3 @@ async def handle_notifications_callback(callback: CallbackQuery, user_role: User
 async def handle_notifications_button(message: Message):
     """Обработка нажатия кнопки Уведомления"""
     await cmd_notifications(message)
-
-

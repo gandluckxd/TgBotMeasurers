@@ -1,4 +1,4 @@
-"""Модели базы данных"""
+﻿"""Модели базы данных"""
 from datetime import datetime
 from typing import Optional
 from enum import Enum as PyEnum
@@ -200,7 +200,9 @@ class Measurement(Base):
         # Если есть код заказа Altawin - загружаем актуальные данные из Altawin
         if self.altawin_order_code:
             from services.altawin import altawin_client
-            return altawin_client.get_order_data(self.altawin_order_code)
+            altawin_data = altawin_client.get_order_data(self.altawin_order_code)
+            if altawin_data:
+                return altawin_data
 
         # Fallback для старых записей без кода - используем legacy-поля из БД
         # Проверяем, есть ли хоть какие-то данные в старых полях
@@ -256,51 +258,53 @@ class Measurement(Base):
 
         # Получаем актуальные данные из Altawin
         altawin_data = self.get_altawin_data()
+        altawin_missing_text = "Данные не найдены в Altawin"
+
+        def altawin_value(value):
+            if not altawin_data:
+                return altawin_missing_text
+            if value is None or value == "":
+                return "Не указано"
+            return value
 
         # === БЛОК 1: Основная информация о заказе ===
         text += f"📄 <b>Сделка:</b> {self.lead_name}\n"
 
-        # Номер заказа из Altawin
-        if altawin_data and altawin_data.order_number:
-            text += f"🔢 <b>Номер заказа:</b> {altawin_data.order_number}\n"
-
-        # Адрес из Altawin
-        if altawin_data and altawin_data.address:
-            text += f"📍 <b>Адрес:</b> {altawin_data.address}\n"
-
-        # Зона доставки из Altawin
-        if altawin_data and altawin_data.zone:
-            text += f"🚚 <b>Зона доставки:</b> {altawin_data.zone}\n"
+        # Данные заказа из Altawin
+        text += f"🔢 <b>Номер заказа:</b> {altawin_value(altawin_data.order_number if altawin_data else None)}\n"
+        text += f"📍 <b>Адрес:</b> {altawin_value(altawin_data.address if altawin_data else None)}\n"
+        text += f"🚚 <b>Зона доставки:</b> {altawin_value(altawin_data.zone if altawin_data else None)}\n"
 
         text += "\n"
 
         # === БЛОК 2: Контактные данные ===
-        if self.contact_name:
-            text += f"👤 <b>Контакт:</b> {self.contact_name}\n"
+        text += f"👤 <b>Контакт:</b> {self.contact_name or 'Данные не найдены в AmoCRM'}\n"
 
-        # Телефон из Altawin
-        if altawin_data and altawin_data.phone:
+        phone_text = self.contact_phone or ""
+        if phone_text:
             from utils.phone_formatter import format_phone_for_telegram
-            text += f"📞 <b>Телефон:</b> {format_phone_for_telegram(altawin_data.phone)}\n"
+            phone_text = format_phone_for_telegram(phone_text)
+        else:
+            phone_text = "Данные не найдены в AmoCRM"
+        text += f"📞 <b>Телефон:</b> {phone_text}\n"
 
         # Ответственный в AmoCRM
-        if self.responsible_user_name:
-            text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {self.responsible_user_name}\n"
+        text += f"👨‍💼 <b>Ответственный в AmoCRM:</b> {self.responsible_user_name or 'Данные не найдены в AmoCRM'}\n"
 
         text += "\n"
 
         # === БЛОК 3: Параметры окон из Altawin ===
-        has_window_info = False
-        if altawin_data and altawin_data.qty_izd:
-            text += f"🪟 <b>Количество окон:</b> {altawin_data.qty_izd}\n"
-            has_window_info = True
+        if altawin_data and altawin_data.qty_izd is not None:
+            qty_text = str(altawin_data.qty_izd)
+        else:
+            qty_text = altawin_value(None)
+        text += f"🪟 <b>Количество окон:</b> {qty_text}\n"
 
-        if altawin_data and altawin_data.area_izd:
-            text += f"📐 <b>Площадь окон:</b> {altawin_data.area_izd} м²\n"
-            has_window_info = True
-
-        if has_window_info:
-            text += "\n"
+        if altawin_data and altawin_data.area_izd is not None:
+            area_text = f"{altawin_data.area_izd} м²"
+        else:
+            area_text = altawin_value(None)
+        text += f"📐 <b>Площадь окон:</b> {area_text}\n\n"
 
         # === БЛОК 4: Статус и назначение ===
         text += f"📊 <b>Статус:</b> {self.status_text}\n"
@@ -311,6 +315,12 @@ class Measurement(Base):
 
         # === БЛОК 5: Информация о подтверждении и распределении (ТОЛЬКО для админов/руководителей) ===
         if show_admin_info:
+            assignment_zone = None
+            if altawin_data and altawin_data.zone:
+                assignment_zone = altawin_data.zone
+            elif self.delivery_zone:
+                assignment_zone = self.delivery_zone
+
             # Показываем информацию о предложенном замерщике для статуса PENDING_CONFIRMATION
             if self.status == MeasurementStatus.PENDING_CONFIRMATION and self.auto_assigned_measurer:
                 text += "\n⚡️ <b>Система предлагает:</b>\n"
@@ -329,8 +339,8 @@ class Measurement(Base):
                     if self.assignment_reason == 'dealer':
                         if self.dealer_company_name:
                             text += f"  🏢 Компания: {self.dealer_company_name}\n"
-                    elif self.assignment_reason == 'zone' and self.delivery_zone:
-                        text += f"  🗺 Зона: {self.delivery_zone}\n"
+                    elif self.assignment_reason == 'zone' and assignment_zone:
+                        text += f"  🗺 Зона: {assignment_zone}\n"
 
             # История автоматического распределения (для подтвержденных замеров)
             elif self.assignment_reason and self.status != MeasurementStatus.PENDING_CONFIRMATION:
@@ -351,8 +361,8 @@ class Measurement(Base):
                         text += f"  🏢 Компания: {self.dealer_company_name}\n"
                     if self.dealer_field_value:
                         text += f"  👷 Привязанный замерщик: {self.dealer_field_value}\n"
-                elif self.assignment_reason == 'zone' and self.delivery_zone:
-                    text += f"  🗺 Зона: {self.delivery_zone}\n"
+                elif self.assignment_reason == 'zone' and assignment_zone:
+                    text += f"  🗺 Зона: {assignment_zone}\n"
 
                 # Если замерщик был изменён
                 if self.auto_assigned_measurer and self.measurer:
@@ -610,3 +620,6 @@ class Notification(Base):
 
     def __repr__(self) -> str:
         return f"<Notification(id={self.id}, type={self.notification_type}, recipient_id={self.recipient_id})>"
+
+
+

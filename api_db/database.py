@@ -72,8 +72,13 @@ def get_order_data(order_code: str) -> Optional[Dict[str, Any]]:
         FROM orders o
         JOIN orders_uf_values ouf ON ouf.orderid = o.id
         JOIN userfields uf ON uf.userfieldid = ouf.userfieldid
-        WHERE uf.fieldname = 'Unique_code'
-            AND TRIM(ouf.var_str) = ?
+        WHERE o.id = (
+            SELECT ouf2.orderid
+            FROM orders_uf_values ouf2
+            JOIN userfields uf2 ON uf2.userfieldid = ouf2.userfieldid
+            WHERE uf2.fieldname = 'Unique_code'
+                AND TRIM(ouf2.var_str) = ?
+        )
         GROUP BY o.id, o.orderno, o.totalprice, o.adressinstall, o.agreementdate, o.agreementno, o.phoneinstall
         """
 

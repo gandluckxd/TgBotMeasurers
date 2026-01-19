@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # Altawin API (вместо прямого подключения к БД)
     altawin_api_url: str = Field(default="http://127.0.0.1:8001", description="URL API для работы с БД Altawin")
 
+    altawin_db_host: str = Field(default="192.168.1.251", description="Хост БД Altawin (Firebird)")
+    altawin_db_port: int = Field(default=3050, description="Порт БД Altawin (Firebird)")
+    altawin_db_path: str = Field(default="D:/AltawinDB/altawinOffice.FDB", description="Путь к БД Altawin (Firebird)")
+    altawin_db_user: str = Field(default="sysdba", description="Пользователь БД Altawin (Firebird)")
+    altawin_db_password: str = Field(default="masterkey", description="Пароль БД Altawin (Firebird)")
+    altawin_db_charset: str = Field(default="WIN1251", description="Кодировка БД Altawin (Firebird)")
+
     # Logging
     log_level: str = Field(default="INFO", description="Уровень логирования")
 

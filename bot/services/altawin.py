@@ -1,4 +1,4 @@
-"""Интеграция с базой данных Altawin через HTTP API"""
+﻿"""Utilities for Altawin API access"""
 import httpx
 from typing import Optional, Dict, Any
 from loguru import logger
@@ -11,21 +11,21 @@ from config import settings
 
 @dataclass
 class AltawinOrderData:
-    """Данные заказа из Altawin"""
+    """Р”Р°РЅРЅС‹Рµ Р·Р°РєР°Р·Р° РёР· Altawin"""
     order_id: int
-    order_number: str  # Номер заказа
-    total_price: Optional[Decimal] = None  # Общая стоимость
-    qty_izd: Optional[Decimal] = None  # Количество изделий
-    area_izd: Optional[Decimal] = None  # Площадь изделий
-    zone: Optional[str] = None  # Зона доставки
-    measurer: Optional[str] = None  # Замерщик
-    address: Optional[str] = None  # Адрес объекта
-    agreement_date: Optional[datetime] = None  # Дата договора
-    agreement_no: Optional[str] = None  # Номер договора
-    phone: Optional[str] = None  # Телефон
+    order_number: str  # РќРѕРјРµСЂ Р·Р°РєР°Р·Р°
+    total_price: Optional[Decimal] = None  # РћР±С‰Р°СЏ СЃС‚РѕРёРјРѕСЃС‚СЊ
+    qty_izd: Optional[Decimal] = None  # РљРѕР»РёС‡РµСЃС‚РІРѕ РёР·РґРµР»РёР№
+    area_izd: Optional[Decimal] = None  # РџР»РѕС‰Р°РґСЊ РёР·РґРµР»РёР№
+    zone: Optional[str] = None  # Р—РѕРЅР° РґРѕСЃС‚Р°РІРєРё
+    measurer: Optional[str] = None  # Р—Р°РјРµСЂС‰РёРє
+    address: Optional[str] = None  # РђРґСЂРµСЃ РѕР±СЉРµРєС‚Р°
+    agreement_date: Optional[datetime] = None  # Р”Р°С‚Р° РґРѕРіРѕРІРѕСЂР°
+    agreement_no: Optional[str] = None  # РќРѕРјРµСЂ РґРѕРіРѕРІРѕСЂР°
+    phone: Optional[str] = None  # РўРµР»РµС„РѕРЅ
 
     def to_dict(self) -> Dict[str, Any]:
-        """Преобразовать в словарь"""
+        """РџСЂРµРѕР±СЂР°Р·РѕРІР°С‚СЊ РІ СЃР»РѕРІР°СЂСЊ"""
         return {
             "order_id": self.order_id,
             "order_number": self.order_number,
@@ -42,41 +42,37 @@ class AltawinOrderData:
 
 
 class AltawinClient:
-    """HTTP клиент для работы с API БД Altawin"""
+    """HTTP client for Altawin API"""
 
     def __init__(self):
-        # URL API сервиса для работы с БД Altawin
         self.api_url = getattr(settings, 'altawin_api_url', "http://127.0.0.1:8001")
-        self.timeout = 30.0  # Таймаут запросов в секундах
+        self.timeout = 30.0
 
     def get_order_data(self, order_code: str) -> Optional[AltawinOrderData]:
         """
-        Получить данные заказа из БД Altawin по уникальному коду через HTTP API
+        Fetch order data from Altawin API by unique order code.
 
         Args:
-            order_code: Уникальный код заказа (поле Unique_code)
+            order_code: Unique order code (Unique_code field)
 
         Returns:
-            AltawinOrderData или None если заказ не найден
+            AltawinOrderData or None if not found
         """
         try:
             url = f"{self.api_url}/api/orders/{order_code}"
-            logger.info(f"Запрос данных заказа через API: {url}")
+            logger.info(f"Requesting order data from Altawin API: {url}")
 
-            # Используем httpx для синхронного HTTP запроса
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(url)
 
                 if response.status_code == 404:
-                    logger.warning(f"Заказ с кодом {order_code} не найден в Altawin")
+                    logger.warning(f"Order {order_code} not found in Altawin")
                     return None
 
-                response.raise_for_status()  # Проверка на ошибки HTTP
+                response.raise_for_status()
 
-                # Парсим JSON ответ
                 data = response.json()
 
-                # Преобразуем в объект AltawinOrderData
                 result = AltawinOrderData(
                     order_id=data["order_id"],
                     order_number=data.get("order_number", ""),
@@ -91,19 +87,21 @@ class AltawinClient:
                     phone=data.get("phone")
                 )
 
-                logger.info(f"✅ Получены данные для заказа {order_code}: {result.order_number}")
+                logger.info(f"Order {order_code} loaded: {result.order_number}")
                 return result
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"❌ HTTP ошибка при запросе данных заказа {order_code}: {e.response.status_code}")
+            logger.error(f"HTTP error fetching order {order_code}: {e.response.status_code}")
             return None
         except httpx.RequestError as e:
-            logger.error(f"❌ Ошибка подключения к API Altawin для заказа {order_code}: {e}")
+            logger.error(f"Altawin API connection error for order {order_code}: {e}")
             return None
         except Exception as e:
-            logger.error(f"❌ Ошибка получения данных из API Altawin для кода {order_code}: {e}", exc_info=True)
+            logger.error(f"Altawin API error for order {order_code}: {e}", exc_info=True)
             return None
 
 
-# Глобальный экземпляр клиента
+# Configure Altawin client
 altawin_client = AltawinClient()
+
+
