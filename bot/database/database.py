@@ -334,8 +334,9 @@ async def create_measurement(
         lead_name=lead_name,
         responsible_user_name=responsible_user_name,
         contact_name=contact_name,
+        contact_phone=contact_phone,
         altawin_order_code=altawin_order_code,  # НОВОЕ ПОЛЕ - код заказа из Altawin
-        # ПРИМЕЧАНИЕ: Старые поля (contact_phone, address, delivery_zone, order_number, windows_count, windows_area)
+        # ПРИМЕЧАНИЕ: Старые поля (address, delivery_zone, order_number, windows_count, windows_area)
         # больше не заполняются - данные получаются из Altawin динамически
         manager_id=manager_id,
         # Предложенный замерщик (до подтверждения админом)

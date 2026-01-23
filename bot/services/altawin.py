@@ -1,6 +1,7 @@
 ﻿"""Utilities for Altawin API access"""
 import httpx
 from typing import Optional, Dict, Any
+from urllib.parse import quote
 from loguru import logger
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,8 +60,9 @@ class AltawinClient:
             AltawinOrderData or None if not found
         """
         try:
-            url = f"{self.api_url}/api/orders/{order_code}"
-            logger.info(f"Requesting order data from Altawin API: {url}")
+            encoded_code = quote(order_code, safe="")
+            url = f"{self.api_url}/api/orders/{encoded_code}"
+            logger.info(f"Requesting order data from Altawin API: {url} (raw code: {order_code})")
 
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(url)

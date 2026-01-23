@@ -39,7 +39,7 @@ class AmoCRMLead(BaseModel):
 
         for field in self.custom_fields_values:
             if field.get("field_code") == field_code and field.get("values"):
-                values = field.get("values", [])
+                values = field.get("values", []) or [] or []
                 if values and len(values) > 0:
                     return values[0].get("value")
         return None
@@ -204,19 +204,20 @@ class WebhookProcessor:
                 first_contact = contacts[0]
                 contact_name = first_contact.get("name")
 
-                custom_fields = first_contact.get("custom_fields_values") or []
+                custom_fields = first_contact.get("custom_fields_values") or first_contact.get("custom_fields") or []
                 for field in custom_fields:
                     field_code = field.get("field_code")
-                    field_id = field.get("field_id")
-                    values = field.get("values", [])
+                    values = field.get("values", []) or []
 
                     if field_code == "PHONE" and values:
+                        value = values[0].get("value")
+                        if not value:
+                            continue
                         from utils.phone_formatter import normalize_phone
-                        contact_phone = normalize_phone(values[0].get("value"))
+                        contact_phone = normalize_phone(value)
                         break
 
-            # Получаем кастомные поля сделки по ID
-            lead_custom_fields = lead.get("custom_fields_values") or []
+            lead_custom_fields = lead.get("custom_fields_values") or lead.get("custom_fields") or []
 
             # ВАЖНО: Теперь из AmoCRM берём ТОЛЬКО код заказа из Altawin
             # Все остальные данные (адрес, телефон, зона, количество окон и т.д.)
@@ -224,11 +225,17 @@ class WebhookProcessor:
             altawin_order_code = None  # Код заказа из Altawin (ID: 809853)
 
             for field in lead_custom_fields:
-                field_id = field.get("field_id")
-                values = field.get("values", [])
+                field_id = field.get("field_id") or field.get("id")
+                values = field.get("values", []) or []
 
-                if field_id == 809853 and values:  # Код заказа из Altawin
-                    altawin_order_code = str(values[0].get("value")).strip()
+                if str(field_id) == "809853" and values:  # Код заказа из Altawin
+                    value = values[0].get("value")
+                    if value is None:
+                        continue
+                    value = str(value).strip()
+                    if not value:
+                        continue
+                    altawin_order_code = value
                     break  # Нашли код - больше ничего не нужно
 
             # Создаем замер в БД
@@ -236,9 +243,74 @@ class WebhookProcessor:
                 # Проверяем, нет ли уже замера для этой сделки
                 existing = await get_measurement_by_amocrm_id(session, lead_id)
                 if existing:
-                    logger.info(f"Замер для сделки {lead_id} уже существует")
+                    updated = False
+                    existing_code = (existing.altawin_order_code or "").strip()
+                    existing_code_valid = bool(existing_code) and existing_code.lower() not in ("none", "null")
+                    if altawin_order_code and not existing_code_valid:
+                        existing.altawin_order_code = altawin_order_code
+                        existing_code = altawin_order_code
+                        existing_code_valid = True
+                        updated = True
+                    if contact_name and not existing.contact_name:
+                        existing.contact_name = contact_name
+                        updated = True
+                    existing_phone = (existing.contact_phone or "").strip()
+                    if contact_phone and not existing_phone:
+                        existing.contact_phone = contact_phone
+                        updated = True
+                    if responsible_user_name and not existing.responsible_user_name:
+                        existing.responsible_user_name = responsible_user_name
+                        updated = True
+                    if responsible_user_id and not existing.manager_id:
+                        from database import get_user_by_amocrm_id
+                        manager = await get_user_by_amocrm_id(session, responsible_user_id)
+                        if manager:
+                            existing.manager_id = manager.id
+                            updated = True
+                    if company_name and not existing.dealer_company_name:
+                        existing.dealer_company_name = company_name
+                        updated = True
+                    if company_measurer_field and not existing.dealer_field_value:
+                        existing.dealer_field_value = company_measurer_field
+                        updated = True
+                    order_code_for_lookup = altawin_order_code or (existing_code if existing_code_valid else None)
+                    delivery_zone_for_assignment = None
+                    if order_code_for_lookup:
+                        from services.altawin import altawin_client
+                        altawin_data = altawin_client.get_order_data(order_code_for_lookup)
+                        if altawin_data and altawin_data.zone:
+                            delivery_zone_for_assignment = altawin_data.zone
+                            if not existing.delivery_zone:
+                                existing.delivery_zone = delivery_zone_for_assignment
+                                updated = True
+                    if delivery_zone_for_assignment or existing.dealer_field_value:
+                        from database.models import MeasurementStatus
+                        should_reassign = (
+                            existing.status == MeasurementStatus.PENDING_CONFIRMATION
+                            and existing.assignment_reason in (None, "round_robin", "none")
+                        )
+                        if should_reassign:
+                            from services.zone_service import ZoneService
+                            zone_service = ZoneService(session)
+                            new_measurer, new_reason, _ = await zone_service.assign_measurer_with_priority(
+                                delivery_zone=delivery_zone_for_assignment,
+                                measurer_field_value=existing.dealer_field_value,
+                                company_name=existing.dealer_company_name
+                            )
+                            if new_measurer and (
+                                existing.auto_assigned_measurer_id != new_measurer.id
+                                or existing.assignment_reason != new_reason
+                            ):
+                                existing.auto_assigned_measurer_id = new_measurer.id
+                                existing.assignment_reason = new_reason
+                                updated = True
+                    if updated:
+                        await session.commit()
+                        await session.refresh(existing)
+                        logger.info(f"Measurement for lead {lead_id} updated")
+                    else:
+                        logger.info(f"Measurement for lead {lead_id} already exists")
                     return
-
                 # Ищем менеджера по amocrm_user_id
                 from database import get_user_by_amocrm_id
                 manager = None
@@ -268,6 +340,7 @@ class WebhookProcessor:
                     lead_name=lead_name,
                     responsible_user_name=responsible_user_name,
                     contact_name=contact_name,
+                    contact_phone=contact_phone,
                     altawin_order_code=altawin_order_code,  # НОВОЕ ПОЛЕ - код заказа из Altawin
                     delivery_zone=delivery_zone_for_assignment,  # Для автораспределения
                     manager_id=manager_id,

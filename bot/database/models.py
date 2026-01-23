@@ -281,6 +281,8 @@ class Measurement(Base):
         text += f"👤 <b>Контакт:</b> {self.contact_name or 'Данные не найдены в AmoCRM'}\n"
 
         phone_text = self.contact_phone or ""
+        if not phone_text and altawin_data and getattr(altawin_data, "phone", None):
+            phone_text = altawin_data.phone
         if phone_text:
             from utils.phone_formatter import format_phone_for_telegram
             phone_text = format_phone_for_telegram(phone_text)

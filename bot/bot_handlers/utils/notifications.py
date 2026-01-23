@@ -35,9 +35,13 @@ def get_altawin_display_values(altawin_data, contact_phone: Optional[str] = None
     if area_izd not in ["Не указано", missing_text]:
         area_izd = f"{area_izd} м²"
 
-    if contact_phone:
+    phone_source = contact_phone
+    if not phone_source and altawin_data and getattr(altawin_data, "phone", None):
+        phone_source = altawin_data.phone
+
+    if phone_source:
         from utils.phone_formatter import format_phone_for_telegram
-        phone = format_phone_for_telegram(contact_phone)
+        phone = format_phone_for_telegram(phone_source)
     else:
         phone = amo_missing_text
 

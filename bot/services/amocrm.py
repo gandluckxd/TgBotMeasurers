@@ -175,26 +175,62 @@ class AmoCRMClient:
             endpoint=f"leads/{lead_id}/links"
         )
 
-        if not result or "_embedded" not in result:
-            return []
-
-        links = result["_embedded"].get("links", [])
-        contact_ids = [link["to_entity_id"] for link in links if link["to_entity_type"] == "contacts"]
+        contact_ids = []
+        if result and "_embedded" in result:
+            links = result["_embedded"].get("links", [])
+            contact_ids = [link["to_entity_id"] for link in links if link["to_entity_type"] == "contacts"]
 
         if not contact_ids:
+            lead = await self.get_lead(lead_id)
+            embedded_contacts = (lead or {}).get("_embedded", {}).get("contacts", [])
+            contact_ids = [
+                contact.get("id") or contact.get("contact_id") or contact.get("to_entity_id")
+                for contact in embedded_contacts
+                if contact.get("id") or contact.get("contact_id") or contact.get("to_entity_id")
+            ]
+
+        if contact_ids:
+            contact_ids = list(dict.fromkeys(contact_ids))
+        else:
             return []
 
         # Получаем информацию о контактах
+        contacts = []
+
+        # Try API v4 filter by id first
+        filter_params = [("filter[id]", str(contact_id)) for contact_id in contact_ids]
         contacts_result = await self._make_request(
             method="GET",
             endpoint="contacts",
-            params={"id": contact_ids}
+            params=filter_params
         )
 
         if contacts_result and "_embedded" in contacts_result:
-            return contacts_result["_embedded"].get("contacts", [])
+            contacts = contacts_result["_embedded"].get("contacts", [])
 
-        return []
+        if not contacts:
+            # Fallback: pass ids directly
+            id_params = [("id", str(contact_id)) for contact_id in contact_ids]
+            contacts_result = await self._make_request(
+                method="GET",
+                endpoint="contacts",
+                params=id_params
+            )
+
+            if contacts_result and "_embedded" in contacts_result:
+                contacts = contacts_result["_embedded"].get("contacts", [])
+
+        if not contacts:
+            # Fallback: fetch each contact by id
+            for contact_id in contact_ids:
+                contact = await self._make_request(
+                    method="GET",
+                    endpoint=f"contacts/{contact_id}"
+                )
+                if contact:
+                    contacts.append(contact)
+
+        return contacts
 
     async def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
         """
